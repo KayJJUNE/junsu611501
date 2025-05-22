@@ -11,3 +11,4 @@ pandas
 streamlit
 gradio
 aiohttp>=3.9.3
+setuptools

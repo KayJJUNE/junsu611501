@@ -11,4 +11,3 @@ pandas
 streamlit
 gradio
 aiohttp>=3.9.3
-python-3.11.8

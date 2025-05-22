@@ -1,0 +1,680 @@
+import os
+from dotenv import load_dotenv
+import asyncio
+from bot_selector import BotSelector
+from character_bot import CharacterBot
+import discord
+from discord.ext import commands
+import openai
+from discord import Embed, app_commands
+from typing import Dict, Any
+from datetime import datetime
+import langdetect
+import sqlite3
+from config import (CHARACTER_PROMPTS, OPENAI_API_KEY, CHARACTER_INFO,
+                    CHARACTER_IMAGES, CHARACTER_AFFINITY_SPEECH,
+                    AFFINITY_LEVELS)
+
+# Load environment variables
+load_dotenv()
+
+# Get bot tokens from environment variables
+SELECTOR_TOKEN = os.getenv('SELECTOR_TOKEN')
+KAGARI_TOKEN = os.getenv('KAGARI_TOKEN')
+EROS_TOKEN = os.getenv('EROS_TOKEN')
+ELYSIA_TOKEN = os.getenv('ELYSIA_TOKEN')
+
+
+async def run_bot(bot, token):
+    try:
+        await bot.start(token)
+    except Exception as e:
+        print(f"Error starting bot: {e}")
+
+
+async def run_all_bots():
+    try:
+        # Initialize selector bot
+        selector_bot = BotSelector()
+
+        # Create character bots
+        character_bots = {
+            "Kagari": CharacterBot("Kagari", selector_bot),
+            "Eros": CharacterBot("Eros", selector_bot),
+            "Elysia": CharacterBot("Elysia", selector_bot)
+        }
+
+        # Set character_bots in selector_bot
+        selector_bot.character_bots = character_bots
+
+        # Create tasks for all bots
+        tasks = [
+            run_bot(selector_bot, SELECTOR_TOKEN),
+            run_bot(character_bots["Kagari"], KAGARI_TOKEN),
+            run_bot(character_bots["Eros"], EROS_TOKEN),
+            run_bot(character_bots["Elysia"], ELYSIA_TOKEN)
+        ]
+
+        # Run all bots concurrently
+        await asyncio.gather(*tasks)
+
+    except Exception as e:
+        print(f"Error occurred: {e}")
+    finally:
+        # Cleanup
+        await selector_bot.close()
+        for bot in character_bots.values():
+            await bot.close()
+
+
+class CharacterBot(commands.Bot):
+
+    def __init__(self, character_name: str, bot_selector: Any):
+        intents = discord.Intents.all()
+        super().__init__(
+            command_prefix='/',
+            intents=intents,
+            status=discord.Status.online,
+            activity=discord.Game(name=f"Chatting as {character_name}"))
+
+        # 기본 속성 초기화
+        self.character_name = character_name
+        self.active_channels = {}
+        self.message_history = {}
+        self.db = DatabaseManager()
+        self.bot_selector = bot_selector
+        self.user_affinity_levels = {}
+        self.last_message_time = {}
+        self.chat_timers = {}
+
+        # 프롬프트 설정
+        base_prompt = CHARACTER_PROMPTS.get(character_name, "")
+        self.prompt = base_prompt
+        self.character_styles = CHARACTER_AFFINITY_SPEECH.get(
+            character_name, {})
+
+    async def setup_hook(self):
+        """봇 초기화 시 호출되는 메소드"""
+        print(f"{self.character_name} bot is initializing...")
+        try:
+            await self.tree.sync()
+            print(f"{self.character_name} bot commands synced!")
+            self.setup_commands()
+        except Exception as e:
+            print(f"Error syncing commands: {e}")
+
+    def setup_commands(self):
+        """봇 명령어 설정"""
+        @self.tree.command(
+            name="ranking",
+            description="전체 사용자 친밀도 순위 확인"
+        )
+        async def ranking_command(interaction: discord.Interaction):
+            try:
+                # 랭킹 정보 가져오기
+                rankings, (user_rank, user_total_score) = \
+                    self.db.get_affinity_ranking(interaction.user.id)
+                if not rankings:
+                    await interaction.response.send_message("아직 랭킹 정보가 없습니다.")
+                    return
+
+                embed = discord.Embed(
+                    title="🏆 전체 친밀도 랭킹",
+                    description="모든 캐릭터와의 친밀도 합산 순위입니다.",
+                    color=discord.Color.gold()
+                )
+    
+                # 상위 50위 표시
+                for user_id, total_score, rank in rankings:
+                    user = self.get_user(user_id)
+                    display_name = user.display_name if user else f"User{user_id}"
+
+                    # 현재 사용자의 순위는 굵은 글씨로 표시
+                    if user_id == interaction.user.id:
+                        name = f"{rank}등: **{display_name}**"
+                    else:
+                        name = f"{rank}등: {display_name}"
+
+                    embed.add_field(
+                        name=name,
+                        value=f"총 친밀도: {total_score}점",
+                        inline=False
+                    )
+
+                # 사용자가 50위 밖이면 따로 표시
+                if user_rank and user_rank > 50:
+                    embed.add_field(
+                        name="─────────────",
+                        value=f"**{user_rank}등: {interaction.user.display_name}**",
+                        inline=False
+                    )
+
+                await interaction.response.send_message(embed=embed)
+
+            except Exception as e:
+                print(f"Error in ranking display: {e}")
+                await interaction.response.send_message("랭킹 정보를 불러오는 중 오류가 발생했습니다.")
+
+        @self.tree.command(
+            name="affinity",
+            description="내 캐릭터별 친밀도 확인"
+        )
+        async def affinity_command(interaction: discord.Interaction):
+            try:
+                # 친밀도 정보를 비공개로 전송
+                await interaction.response.defer(ephemeral=True)
+
+                # 전체 순위 정보 가져오기
+                rankings, user_rank_info = self.db.get_affinity_ranking(interaction.user.id)
+                user_rank = user_rank_info[0] if user_rank_info else None
+                user_total_score = user_rank_info[1]
+                if not rankings:
+                    await interaction.response.send_message("아직 랭킹 정보가 없습니다.")
+                    return
+
+                embed = discord.Embed(
+                    title="🏆 전체 친밀도 랭킹",
+                    description=f"모든 캐릭터와의 친밀도 합산 순위입니다.\n현재 {interaction.user.display_name}님의 순위: {user_rank}등 (총점: {user_total_score}점)",
+                    colour=discord.Color.gold()
+                       # 상위 50위 표시
+                for i, (user_id, total_score, rank) in enumerate(rankings):
+                            user = self.get_user(user_id)
+                            display_name = user.display_name if user else f"User{user_id}"
+
+                            # 순위에 따른 이모지 설정
+                            rank_emoji = "👑" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "✨"
+
+                            # 현재 사용자의 순위는 굵은 글씨로 표시
+                            if user_id == interaction.user.id:
+                                name = f"{rank_emoji} {rank}등: **{display_name}**"
+                            else:
+                                name = f"{rank_emoji} {rank}등: {display_name}"
+
+                            embed.add_field(
+                                name=name,
+                                value=f"총 친밀도: {total_score}점",
+                                inline=False
+                    
+                # 캐릭터별 친밀도 정보 가져오기
+                character_affinities = self.db.get_user_affinity(interaction.user.id)
+
+                rank_text = f"{user_rank}등" if user_rank else "순위 없음"
+
+                Embed = discord.Embed(
+                    title=f"💝 {interaction.user.display_name}님의 친밀도 정보",
+                    description=f"현재 전체 순위: {f'{user_rank}등' if user_rank else '순위 없음'} (총점: {user_total_score}점)",
+                    colour=discord.Color.purple()
+                     )
+                
+                total_score = 0
+                for char_name, score, daily_count, last_time in character_affinities:
+                    total_score += score
+
+                    # 친밀도 레벨 계산
+                    level = "낮음"
+                    if score >= 100:
+                        level = "매우 높음"
+                    elif score >= 50:
+                        level = "높음"
+                    elif score >= 20:
+                        level = "보통"
+
+                    # 마지막 대화 시간 계산
+                    if last_time:
+                        last_time = datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
+                        time_diff = datetime.now() - last_time
+                        if time_diff.days > 0:
+                            last_chat = f"{time_diff.days}일 전"
+                        elif time_diff.seconds // 3600 > 0:
+                            last_chat = f"{time_diff.seconds // 3600}시간 전"
+                        else:
+                            last_chat = f"{time_diff.seconds // 60}분 전"
+                    else:
+                        last_chat = "없음"
+
+                    embed.add_field(
+                        name=f"✨ {char_name}",
+                        value=f"친밀도: {score}점 ({level})\n"
+                              f"오늘 대화: {daily_count}회\n"
+                              f"마지막 대화: {last_chat}",
+                        inline=False
+                    )
+
+                embed.set_footer(text=f"총 친밀도: {total_score}점")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+
+            except Exception as e:
+                print(f"Error in affinity command: {e}")
+                await interaction.followup.send(
+                    "친밀도 정보를 불러오는 중 오류가 발생했습니다.",
+                    ephemeral=True
+                )
+
+        @self.tree.command(name="affinity", description="내 캐릭터별 친밀도 확인")
+        async def affinity_command(interaction: discord.Interaction):
+            try:
+                affinity_info = self.db.get_affinity(interaction.user.id,
+                                                     self.character_name)
+                score = affinity_info.get('score', 0)
+                daily_count = affinity_info.get('daily_count', 0)
+
+                embed = discord.Embed(
+                    title="💝 캐릭터별 친밀도",
+                    description=f"{interaction.user.name}님의 캐릭터별 친밀도입니다.",
+                    colour=discord.Color.purple())
+
+                # 각 캐릭터별 친밀도 정보 가져오기
+                for char_name in ["Kagari", "Eros", "Elysia"]:
+                    affinity_info = self.db.get_affinity(
+                        interaction.user.id, char_name)
+
+                    # 친밀도 레벨 계산
+                    level = "낮음"
+                    if affinity_info['score'] >= 100:
+                        level = "매우 높음"
+                    elif affinity_info['score'] >= 50:
+                        level = "높음"
+                    elif affinity_info['score'] >= 20:
+                        level = "보통"
+
+                    embed.add_field(
+                        name=f"✨ {char_name}",
+                        value=
+                        f"친밀도: {affinity_info['score']}점 ({level})\n오늘 채팅: {affinity_info['daily_count']}회",
+                        inline=False)
+
+                await interaction.response.send_message(embed=embed)
+
+            except Exception as e:
+                print(f"Error in affinity command: {e}")
+                await interaction.response.send_message(
+                    "친밀도 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def add_channel(self, channel_id: int,
+                          user_id: int) -> tuple[bool, str]:
+        """채널 활성화"""
+        try:
+            if channel_id in self.active_channels:
+                return False, "이미 활성화된 채널입니다."
+
+            self.active_channels[channel_id] = {
+                "user_id": user_id,
+                "history": []
+            }
+            self.message_history[channel_id] = []
+            return True, "채널이 성공적으로 활성화되었습니다."
+
+        except Exception as e:
+            print(f"Error in add_channel: {e}")
+            return False, "채널 활성화 중 오류가 발생했습니다."
+
+    def get_intimacy_prompt(self, intimacy_level: int) -> str:
+        """친밀도 레벨에 따른 프롬프트 생성"""
+        try:
+            affinity_level = "low"
+            if intimacy_level >= AFFINITY_LEVELS["high"][0]:
+                affinity_level = "high"
+            elif intimacy_level >= AFFINITY_LEVELS["medium"][0]:
+                affinity_level = "medium"
+
+            speech_pattern = CHARACTER_AFFINITY_SPEECH[
+                self.character_name][affinity_level]
+            prompt = f"{self.prompt}\n\nCurrent affinity level: {affinity_level}\nTone: {speech_pattern['tone']}"
+            return prompt
+        except Exception as e:
+            print(f"Error in get_intimacy_prompt: {e}")
+            return self.prompt
+
+    async def get_ai_response(self, messages: list) -> str:
+        """OpenAI API를 통한 응답 생성"""
+        try:
+            response = await openai.ChatCompletion.acreate(
+                model="gpt-4-turbo-preview",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1000,
+                presence_penalty=0.6,
+                frequency_penalty=0.3)
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error in AI response generation: {e}")
+            return "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다."
+
+    async def send_response_with_intimacy(self, message, response: str,
+                                          intimacy_level: int):
+        """친밀도 레벨에 따른 응답 전송"""
+        try:
+            async with message.channel.typing():
+                await asyncio.sleep(len(response) * 0.05)
+                await message.channel.send(response)
+
+                self.db.add_message(message.channel.id, message.author.id,
+                                    self.character_name, "assistant", response)
+        except Exception as e:
+            print(f"Error in sending response: {e}")
+            await message.channel.send(response)
+
+    async def on_message(self, message):
+        """메시지 수신 시 호출되는 이벤트 핸들러"""
+        if message.author.bot or not message.guild:
+            return
+
+        if message.content.startswith('/'):
+            await super().on_message(message)
+            return
+
+        if message.channel.id not in self.active_channels:
+            return
+
+        try:
+            # 친밀도 정보 가져오기
+            affinity_info = self.db.get_affinity(message.author.id,
+                                                 self.character_name)
+            affinity_score = affinity_info[
+                "affinity_score"] if affinity_info else 0
+
+            # 친밀도 레벨 계산
+            affinity_level = "low"
+            if affinity_score >= 70:
+                affinity_level = "high"
+            elif affinity_score >= 30:
+                affinity_level = "medium"
+
+            # 시스템 메시지 준비
+            system_prompt = self.get_intimacy_prompt(affinity_score)
+            messages = [{"role": "system", "content": system_prompt}]
+
+            # medium 레벨 이상일 때만 이전 대화 기록 가져오기
+            if affinity_level != "low":
+                recent_messages = self.db.get_recent_messages(
+                    channel_id=message.channel.id,
+                    limit=30,  # 상위 30개 메시지만
+                    user_id=message.author.id  # 해당 사용자의 메시지만
+                )
+
+                # 사용자 이름 정보 추가
+                user_name = message.author.display_name
+                context_message = {
+                    "role":
+                    "system",
+                    "content":
+                    f"이 사용자의 이름은 {user_name}입니다. 대화할 때 이름을 자연스럽게 부르며 이전 대화를 참고하세요."
+                }
+                messages.append(context_message)
+                messages.extend(recent_messages)
+            else:
+                # low 레벨일 때는 이름만 전달
+                user_name = message.author.display_name
+                context_message = {
+                    "role": "system",
+                    "content": f"이 사용자의 이름은 {user_name}입니다. 처음 만난 사용자처럼 대화하세요."
+                }
+                messages.append(context_message)
+
+            # 현재 메시지 추가
+            current_message = {"role": "user", "content": message.content}
+            messages.append(current_message)
+
+            # 응답 생성 및 전송
+            response = await self.get_ai_response(messages)
+            await self.send_response_with_intimacy(message, response,
+                                                   affinity_score)
+
+            # 친밀도 업데이트
+            self.db.update_affinity(message.author.id, self.character_name,
+                                    message.content, str(datetime.now()))
+
+        except Exception as e:
+            print(f"Error in message processing: {e}")
+            await message.channel.send("죄송합니다. 오류가 발생했습니다.")
+
+
+def get_affinity(self, user_id: int, character_name: str) -> dict:
+    """친밀도 정보 조회"""
+    with sqlite3.connect(self.db_name) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT OR IGNORE INTO affinity 
+            (user_id, character_name, last_daily_reset)
+            VALUES (?, ?, date('now'))
+        ''', (user_id, character_name))
+
+        cursor.execute(
+            '''
+            SELECT affinity_score, daily_message_count, last_daily_reset,
+                   last_message_time, last_message_content
+            FROM affinity
+            WHERE user_id = ? AND character_name = ?
+        ''', (user_id, character_name))
+
+        result = cursor.fetchone()
+        return {
+            "score": result[0],
+            "daily_count": result[1],
+            "last_reset": result[2],
+            "last_time": result[3],
+            "last_content": result[4]
+        }
+
+
+def update_affinity(self, user_id: int, character_name: str,
+                    message_content: str, current_time: str):
+    """친밀도 업데이트"""
+    with sqlite3.connect(self.db_name) as conn:
+        cursor = conn.cursor()
+
+        # 일일 리셋 확인
+        cursor.execute(
+            '''
+            UPDATE affinity 
+            SET daily_message_count = daily_message_count + 1
+            WHERE user_id = ? 
+            AND character_name = ?
+            AND last_daily_reset = date('now')
+        ''', (user_id, character_name))
+
+        # 새로운 날짜면 리셋
+        cursor.execute(
+            '''
+            UPDATE affinity 
+            SET daily_message_count = 1,
+                last_daily_reset = date('now')
+            WHERE user_id = ? 
+            AND character_name = ?
+            AND last_daily_reset < date('now')
+        ''', (user_id, character_name))
+
+        # 메시지 정보 업데이트
+        cursor.execute(
+            '''
+            UPDATE affinity
+            SET last_message_time = ?,
+                last_message_content = ?
+            WHERE user_id = ? AND character_name = ?
+        ''', (current_time, message_content, user_id, character_name))
+
+        conn.commit()
+
+
+def get_affinity_ranking(self, limit: int = 10):
+    """친밀도 랭킹 조회"""
+    with sqlite3.connect(self.db_name) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT user_id, SUM(affinity_score) as total_score
+            FROM affinity
+            GROUP BY user_id
+            HAVING total_score > 0
+            ORDER BY total_score DESC
+            LIMIT ?
+        ''', (limit, ))
+        return cursor.fetchall()
+
+
+class DatabaseManager:
+    def __init__(self):
+        self.db_name = "chatbot.db"
+        self.setup_database()
+
+    def get_affinity(self, user_id: int, character_name: str) -> dict:
+        """사용자의 특정 캐릭터와의 친밀도 정보 조회"""
+        try:
+            with sqlite3.connect(self.db_name) as conn:
+                cursor = conn.cursor()
+
+                # 현재 날짜와 마지막 리셋 날짜가 다르면 daily_count 리셋
+                cursor.execute('''
+                    UPDATE affinity 
+                    SET daily_message_count = 0, 
+                        last_daily_reset = date('now')
+                    WHERE user_id = ? 
+                    AND character_name = ?
+                    AND last_daily_reset < date('now')
+                ''', (user_id, character_name))
+
+                # 친밀도 정보가 없으면 생성
+                cursor.execute('''
+                    INSERT OR IGNORE INTO affinity 
+                    (user_id, character_name, affinity_score, daily_message_count) 
+                    VALUES (?, ?, 0, 0)
+                ''', (user_id, character_name))
+
+                # 친밀도 정보 조회
+                cursor.execute('''
+                    SELECT affinity_score, daily_message_count,
+                           last_daily_reset, last_message_time
+                    FROM affinity
+                    WHERE user_id = ? AND character_name = ?
+                ''', (user_id, character_name))
+
+                result = cursor.fetchone()
+                conn.commit()
+
+                if not result:
+                    return {
+                        'affinity_score': 0,
+                        'daily_count': 0,
+                        'last_reset': None,
+                        'last_time': None
+                    }
+
+                return {
+                    'affinity_score': result[0],
+                    'daily_count': result[1],
+                    'last_reset': result[2],
+                    'last_time': result[3]
+                }
+
+        except sqlite3.Error as e:
+            print(f"Database error in get_affinity: {e}")
+            return {
+                'affinity_score': 0,
+                'daily_count': 0,
+                'last_reset': None,
+                'last_time': None
+            }
+
+    def get_affinity_ranking(self, user_id: int = None) -> tuple[list, tuple]:
+        """전체 친밀도 랭킹 조회 및 특정 유저의 순위 반환"""
+        try:
+            with sqlite3.connect(self.db_name) as conn:
+                cursor = conn.cursor()
+
+                # 전체 랭킹 조회 (상위 50위)
+                cursor.execute('''
+                    WITH RankedUsers AS (
+                        SELECT 
+                            user_id,
+                            SUM(affinity_score) as total_score,
+                            RANK() OVER (ORDER BY SUM(affinity_score) DESC) as rank
+                        FROM affinity
+                        GROUP BY user_id
+                        HAVING total_score > 0
+                    )
+                    SELECT user_id, total_score, rank
+                    FROM RankedUsers
+                    WHERE rank <= 50
+                    ORDER BY rank
+                ''')
+                top_50_rankings = cursor.fetchall()
+
+                if user_id:
+                    # 특정 유저의 순위와 총점 조회
+                    cursor.execute('''
+                        WITH RankedUsers AS (
+                            SELECT 
+                                user_id,
+                                SUM(affinity_score) as total_score,
+                                RANK() OVER (ORDER BY SUM(affinity_score) DESC) as rank
+                            FROM affinity
+                            GROUP BY user_id
+                            HAVING total_score > 0
+                        )
+                        SELECT rank, total_score
+                        FROM RankedUsers
+                        WHERE user_id = ?
+                    ''', (user_id,))
+
+                    user_rank_info = cursor.fetchone()
+                    if user_rank_info:
+                        return top_50_rankings, (user_rank_info[0], user_rank_info[1])
+
+                    # 순위는 없지만 총점은 있을 수 있음
+                    cursor.execute('''
+                        SELECT SUM(affinity_score) as total_score
+                        FROM affinity
+                        WHERE user_id = ?
+                    ''', (user_id,))
+                    total_score = cursor.fetchone()[0] or 0
+                    return top_50_rankings, (None, total_score)
+
+                return top_50_rankings, (None, 0)
+
+        except sqlite3.Error as e:
+            print(f"Database error in get_affinity_ranking: {e}")
+            return [], (None, 0)
+
+    def update_affinity(self, user_id: int, character_name: str, last_message: str, last_message_time: str):
+        """친밀도 정보 업데이트"""
+        try:
+            with sqlite3.connect(self.db_name) as conn:
+                cursor = conn.cursor()
+
+                # 현재 친밀도 정보 가져오기
+                cursor.execute('''
+                    SELECT affinity_score, daily_message_count
+                    FROM affinity
+                    WHERE user_id = ? AND character_name = ?
+                ''', (user_id, character_name))
+
+                result = cursor.fetchone()
+                current_score = result[0] if result else 0
+                daily_count = result[1] if result else 0
+
+                # 일일 대화 수에 따른 친밀도 보상
+                score_change = 1  # 기본 증가값
+                if daily_count == 9:  # 10번째 대화
+                    score_change = 5
+                elif daily_count == 29:  # 30번째 대화
+                    score_change = 3
+
+                # 최대 친밀도(100) 제한
+                new_score = min(100, current_score + score_change)
+
+                # 친밀도 업데이트
+                cursor.execute('''
+                    INSERT OR REPLACE INTO affinity 
+                    (user_id, character_name, affinity_score, daily_message_count, 
+                    last_message_content, last_message_time)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (user_id, character_name, new_score, daily_count + 1, 
+                      last_message, last_message_time))
+
+                conn.commit()
+                return True
+
+        except sqlite3.Error as e:
+            print(f"Database error in update_affinity: {e}")
+            return False

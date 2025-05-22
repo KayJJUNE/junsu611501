@@ -1,0 +1,13 @@
+discord.py==2.3.2
+python-dotenv==1.0.0
+openai==0.28.1
+Pillow==10.0.1
+langdetect==1.0.9
+flask==2.3.3
+aiohttp==3.8.5
+asyncio==3.4.3 
+aiosqlite
+deep-translator
+pandas
+streamlit
+gradio

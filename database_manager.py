@@ -16,11 +16,11 @@ class DatabaseManager:
 
     def get_conn(self):
         return psycopg2.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            dbname=os.getenv("DB_NAME"),
-            port=os.getenv("DB_PORT", 5432)
+            host=os.getenv("PGHOST"),
+            user=os.getenv("PGUSER"),
+            password=os.getenv("PGPASSWORD"),
+            dbname=os.getenv("PGDATABASE"),
+            port=os.getenv("PGPORT", 5432)
         )
 
     def setup_database(self):

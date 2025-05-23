@@ -39,7 +39,7 @@ class DatabaseManager:
                     message_role TEXT,
                     content TEXT,
                     language TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             print("Created conversations table")
@@ -52,8 +52,8 @@ class DatabaseManager:
                     character_name TEXT,
                     emotion_score INTEGER DEFAULT 0,
                     daily_message_count INTEGER DEFAULT 0,
-                    last_daily_reset TEXT DEFAULT CURRENT_DATE,
-                    last_message_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_daily_reset TEXT DEFAULT (date('now')),
+                    last_message_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                     last_message_content TEXT,
                     UNIQUE(user_id, character_name)
                 )
@@ -68,7 +68,7 @@ class DatabaseManager:
                     user_id INTEGER,
                     character_name TEXT,
                     language TEXT DEFAULT 'ko',
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(channel_id, user_id, character_name)
                 )
             ''')
@@ -136,7 +136,7 @@ class DatabaseManager:
                     story_id TEXT,
                     choice_index INTEGER,
                     choice_text TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             print("Created story_choices table")
@@ -157,7 +157,7 @@ class DatabaseManager:
             # 완료된 챕터 테이블
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS completed_chapters (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     user_id INTEGER,
                     character_name TEXT,
                     chapter_id INTEGER,
@@ -205,7 +205,7 @@ class DatabaseManager:
             # 감정 점수 기록 테이블 추가
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS emotion_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     user_id INTEGER,
                     character_name TEXT,
                     score INTEGER,
@@ -314,9 +314,9 @@ class DatabaseManager:
 
                 # 친밀도 정보가 없으면 생성
                 cursor.execute('''
-                    INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
+                    INSERT OR IGNORE INTO affinity 
+                    (user_id, character_name, emotion_score, daily_message_count, last_daily_reset) 
                     VALUES (%s, %s, 0, 0, %s)
-                    ON CONFLICT (user_id, character_name) DO NOTHING
                 ''', (user_id, character_name, current_date))
 
                 # 친밀도 정보 조회
@@ -363,15 +363,12 @@ class DatabaseManager:
             current_score = result[0] if result else 0
             daily_count = result[1] if result else 0
             cursor.execute('''
-                INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_message_content, last_message_time)
+                INSERT OR REPLACE INTO affinity 
+                (user_id, character_name, emotion_score, daily_message_count, 
+                last_message_content, last_message_time)
                 VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (user_id, character_name)
-                DO UPDATE SET
-                    emotion_score = EXCLUDED.emotion_score,
-                    daily_message_count = EXCLUDED.daily_message_count,
-                    last_message_content = EXCLUDED.last_message_content,
-                    last_message_time = EXCLUDED.last_message_time
-            ''', (user_id, character_name, current_score + score_change, daily_count + 1, last_message, last_message_time))
+            ''', (user_id, character_name, current_score + score_change, 
+                  daily_count + 1, last_message, last_message_time))
             conn.commit()
 
     def reset_affinity(self, user_id: int, character_name: str) -> bool:

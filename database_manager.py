@@ -3,6 +3,8 @@ import json
 import aiosqlite
 import discord
 import sqlite3
+import psycopg2
+import os
 
 class DatabaseManager:
     def __init__(self):
@@ -12,10 +14,19 @@ class DatabaseManager:
         self.setup_database()  # 동기 방식으로 초기 테이블 생성
         self.MAX_DAILY_MESSAGES = 100  # 일일 최대 메시지 수 정의
 
+    def get_conn(self):
+        return psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            dbname=os.getenv("DB_NAME"),
+            port=os.getenv("DB_PORT", 5432)
+        )
+
     def setup_database(self):
         """데이터베이스 초기화"""
         print("Setting up database tables...")
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
 
             # 대화 기록 테이블
@@ -66,13 +77,14 @@ class DatabaseManager:
             # 카드 테이블
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_cards (
-                    user_id INTEGER,
-                    character_name TEXT,
-                    card_id TEXT,
-                    obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, character_name, card_id)
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    character_name VARCHAR(64),
+                    card_id VARCHAR(255),
+                    obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            conn.commit()
             print("Created user_cards table")
 
             # 대화 수 추적 테이블
@@ -209,12 +221,12 @@ class DatabaseManager:
     def get_channel_language(self, channel_id: int, user_id: int, character_name: str) -> str:
         """채널의 언어 설정을 가져옵니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT language
                     FROM user_language
-                    WHERE user_id = ? AND character_name = ?
+                    WHERE user_id = %s AND character_name = %s
                 ''', (user_id, character_name))
                 result = cursor.fetchone()
                 return result[0] if result else 'en'
@@ -225,13 +237,13 @@ class DatabaseManager:
     def set_channel_language(self, channel_id: int, user_id: int, character_name: str, language: str) -> bool:
         """채널의 언어 설정 업데이트"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
 
                 # 기존 설정이 있는지 확인
                 cursor.execute('''
                     SELECT language FROM user_language 
-                    WHERE channel_id = ? AND user_id = ? AND character_name = ?
+                    WHERE channel_id = %s AND user_id = %s AND character_name = %s
                 ''', (channel_id, user_id, character_name))
 
                 result = cursor.fetchone()
@@ -240,45 +252,45 @@ class DatabaseManager:
                     # 기존 설정 업데이트
                     cursor.execute('''
                         UPDATE user_language 
-                        SET language = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE channel_id = ? AND user_id = ? AND character_name = ?
+                        SET language = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE channel_id = %s AND user_id = %s AND character_name = %s
                     ''', (language, channel_id, user_id, character_name))
                 else:
                     # 새로운 설정 추가
                     cursor.execute('''
                         INSERT INTO user_language 
                         (channel_id, user_id, character_name, language)
-                        VALUES (?, ?, ?, ?)
+                        VALUES (%s, %s, %s, %s)
                     ''', (channel_id, user_id, character_name, language))
 
                 conn.commit()
                 return True
 
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Error in set_channel_language: {e}")
             return False
 
     def add_message(self, channel_id: int, user_id: int, character_name: str, role: str, content: str, language: str = None):
         """새 메시지 추가"""
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO conversations 
                 (channel_id, user_id, character_name, message_role, content, language)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             ''', (channel_id, user_id, character_name, role, content, language))
             conn.commit()
 
     def get_recent_messages(self, channel_id: int, limit: int = 10):
         """채널의 최근 메시지 가져오기"""
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT message_role, content 
                 FROM conversations 
-                WHERE channel_id = ? 
+                WHERE channel_id = %s 
                 ORDER BY timestamp DESC 
-                LIMIT ?
+                LIMIT %s
             ''', (channel_id, limit))
             messages = cursor.fetchall()
             return [{"role": role, "content": content} for role, content in reversed(messages)]
@@ -286,7 +298,7 @@ class DatabaseManager:
     def get_affinity(self, user_id: int, character_name: str) -> dict:
         """사용자의 특정 캐릭터와의 친밀도 정보 조회"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 current_date = date.today().isoformat()
 
@@ -294,17 +306,17 @@ class DatabaseManager:
                 cursor.execute('''
                     UPDATE affinity 
                     SET daily_message_count = 0, 
-                        last_daily_reset = ?
-                    WHERE user_id = ? 
-                    AND character_name = ?
-                    AND last_daily_reset < ?
+                        last_daily_reset = %s
+                    WHERE user_id = %s 
+                    AND character_name = %s
+                    AND last_daily_reset < %s
                 ''', (current_date, user_id, character_name, current_date))
 
                 # 친밀도 정보가 없으면 생성
                 cursor.execute('''
                     INSERT OR IGNORE INTO affinity 
                     (user_id, character_name, emotion_score, daily_message_count, last_daily_reset) 
-                    VALUES (?, ?, 0, 0, ?)
+                    VALUES (%s, %s, 0, 0, %s)
                 ''', (user_id, character_name, current_date))
 
                 # 친밀도 정보 조회
@@ -312,7 +324,7 @@ class DatabaseManager:
                     SELECT emotion_score, daily_message_count,
                            last_daily_reset, last_message_time
                     FROM affinity
-                    WHERE user_id = ? AND character_name = ?
+                    WHERE user_id = %s AND character_name = %s
                 ''', (user_id, character_name))
 
                 result = cursor.fetchone()
@@ -333,7 +345,7 @@ class DatabaseManager:
                     'last_time': result[3]
                 }
 
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Database error in get_affinity: {e}")
             return {
                 'emotion_score': 0,
@@ -344,9 +356,9 @@ class DatabaseManager:
 
     async def update_affinity(self, user_id: int, character_name: str, last_message: str, last_message_time: str, score_change: int):
         """감정 기반 분석 점수 누적으로 호감도 업데이트"""
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT emotion_score, daily_message_count FROM affinity WHERE user_id=? AND character_name=?', (user_id, character_name))
+            cursor.execute('SELECT emotion_score, daily_message_count FROM affinity WHERE user_id=%s AND character_name=%s', (user_id, character_name))
             result = cursor.fetchone()
             current_score = result[0] if result else 0
             daily_count = result[1] if result else 0
@@ -354,7 +366,7 @@ class DatabaseManager:
                 INSERT OR REPLACE INTO affinity 
                 (user_id, character_name, emotion_score, daily_message_count, 
                 last_message_content, last_message_time)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             ''', (user_id, character_name, current_score + score_change, 
                   daily_count + 1, last_message, last_message_time))
             conn.commit()
@@ -362,20 +374,20 @@ class DatabaseManager:
     def reset_affinity(self, user_id: int, character_name: str) -> bool:
         """특정 유저의 친밀도 초기화"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE affinity
                     SET emotion_score = 0,
                         daily_message_count = 0,
                         last_daily_reset = date('now')
-                    WHERE user_id = ? AND character_name = ?
+                    WHERE user_id = %s AND character_name = %s
                 ''', (user_id, character_name))
 
                 if cursor.rowcount == 0:
                     cursor.execute('''
                         INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
-                        VALUES (?, ?, 0, 0, date('now'))
+                        VALUES (%s, %s, 0, 0, date('now'))
                     ''', (user_id, character_name))
 
                 conn.commit()
@@ -387,14 +399,14 @@ class DatabaseManager:
     def reset_all_affinity(self, character_name: str) -> bool:
         """모든 유저의 친밀도 초기화"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE affinity
                     SET emotion_score = 0,
                         daily_message_count = 0,
                         last_daily_reset = date('now')
-                    WHERE character_name = ?
+                    WHERE character_name = %s
                 ''', (character_name,))
                 conn.commit()
                 return True
@@ -404,13 +416,13 @@ class DatabaseManager:
 
     def get_affinity_ranking(self, character_name: str = None):
         """전체 친밀도 랭킹 조회"""
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             if character_name:
                 cursor.execute('''
                     SELECT user_id, score
                     FROM affinity
-                    WHERE character_name = ? AND score > 0
+                    WHERE character_name = %s AND score > 0
                     ORDER BY score DESC
                     LIMIT 10
                 ''', (character_name,))
@@ -427,7 +439,7 @@ class DatabaseManager:
 
     def check_language_consistency(self):
         """언어 일관성을 점검합니다."""
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT * FROM channel_settings
@@ -441,12 +453,12 @@ class DatabaseManager:
 
     def get_stored_language(self, channel_id: int, user_id: int, character_name: str) -> str:
         """채널의 저장된 언어를 가져옵니다."""
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT language
                 FROM channel_settings
-                WHERE channel_id = ? AND user_id = ? AND character_name = ?
+                WHERE channel_id = %s AND user_id = %s AND character_name = %s
             ''', (channel_id, user_id, character_name))
             result = cursor.fetchone()
             if result:
@@ -457,7 +469,7 @@ class DatabaseManager:
 
     def get_stored_languages(self):
         """모든 채널의 저장된 언어를 가져옵니다."""
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT channel_id, user_id, character_name, language
@@ -469,18 +481,18 @@ class DatabaseManager:
     def get_user_cards(self, user_id: int, character_name: str = None) -> list:
         """사용자의 카드 목록 조회 (card_id 기반)"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 if character_name:
                     cursor.execute('''
                         SELECT card_id FROM user_cards
-                        WHERE user_id = ? AND character_name = ?
+                        WHERE user_id = %s AND character_name = %s
                         ORDER BY card_id
                     ''', (user_id, character_name))
                 else:
                     cursor.execute('''
                         SELECT character_name, card_id FROM user_cards
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         ORDER BY character_name, card_id
                     ''', (user_id,))
                 return [row[0] for row in cursor.fetchall()]
@@ -491,11 +503,11 @@ class DatabaseManager:
     def has_user_card(self, user_id: int, character_name: str, card_id: str) -> bool:
         """사용자가 특정 카드를 보유하고 있는지 확인 (card_id 기반)"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT COUNT(*) FROM user_cards
-                    WHERE user_id = ? AND character_name = ? AND card_id = ?
+                    WHERE user_id = %s AND character_name = %s AND card_id = %s
                 ''', (user_id, character_name, card_id))
                 return cursor.fetchone()[0] > 0
         except Exception as e:
@@ -505,33 +517,29 @@ class DatabaseManager:
     def add_user_card(self, user_id: int, character_name: str, card_id: str):
         """사용자에게 카드 추가 (card_id 기반) 및 전체 발급 순번 관리"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT OR IGNORE INTO user_cards
-                    (user_id, character_name, card_id)
-                    VALUES (?, ?, ?)
+                    INSERT INTO user_cards (user_id, character_name, card_id)
+                    VALUES (%s, %s, %s)
                 ''', (user_id, character_name, card_id))
-                issued_number = 0
-                if cursor.rowcount > 0:
-                    issued_number = self.increment_card_issued_number(character_name, card_id)
                 conn.commit()
-                return (cursor.rowcount > 0, issued_number)
+                return True
         except Exception as e:
             print(f"Error adding user card: {e}")
-            return (False, 0)
+            return False
 
     def get_user_character_messages(self, user_id: int, character_name: str, limit: int = 20):
         """사용자와 특정 캐릭터의 최근 대화 기록 조회"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT message_role, content, timestamp
                     FROM conversations 
-                    WHERE user_id = ? AND character_name = ?
+                    WHERE user_id = %s AND character_name = %s
                     ORDER BY timestamp DESC 
-                    LIMIT ?
+                    LIMIT %s
                 ''', (user_id, character_name, limit))
                 messages = cursor.fetchall()
                 return [{
@@ -546,14 +554,14 @@ class DatabaseManager:
     def get_user_messages(self, user_id: int, limit: int = 20):
         """사용자의 모든 캐릭터와의 최근 대화 기록 조회"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT character_name, message_role, content, timestamp
                     FROM conversations 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY timestamp DESC 
-                    LIMIT ?
+                    LIMIT %s
                 ''', (user_id, limit))
                 messages = cursor.fetchall()
                 return [{
@@ -573,7 +581,7 @@ class DatabaseManager:
                 cursor = await conn.execute('''
                     SELECT COUNT(*) 
                     FROM conversations 
-                    WHERE user_id = ? AND message_role = 'user'
+                    WHERE user_id = %s AND message_role = 'user'
                 ''', (user_id,))
                 result = await cursor.fetchone()
                 return result[0] if result else 0
@@ -588,7 +596,7 @@ class DatabaseManager:
                 cursor = await conn.execute('''
                     SELECT last_milestone 
                     FROM conversation_count 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 ''', (user_id,))
                 result = await cursor.fetchone()
                 return result[0] if result else 0
@@ -604,14 +612,14 @@ class DatabaseManager:
                     INSERT OR REPLACE INTO conversation_count 
                     (user_id, message_count, last_milestone)
                     VALUES (
-                        ?,
+                        %s,
                         COALESCE(
                             (SELECT COUNT(*) 
                             FROM conversations 
-                            WHERE user_id = ? AND message_role = 'user'),
+                            WHERE user_id = %s AND message_role = 'user'),
                             0
                         ),
-                        ?
+                        %s
                     )
                 ''', (user_id, user_id, milestone))
                 await conn.commit()
@@ -673,14 +681,14 @@ class DatabaseManager:
 
             # 이미 달성한 마일스톤인지 확인
             cursor.execute(
-                'SELECT 1 FROM user_milestones WHERE user_id = ? AND milestone = ?',
+                'SELECT 1 FROM user_milestones WHERE user_id = %s AND milestone = %s',
                 (user_id, milestone)
             )
 
             if cursor.fetchone() is None:
                 # 새로운 마일스톤 달성 기록
                 cursor.execute(
-                    'INSERT INTO user_milestones (user_id, milestone) VALUES (?, ?)',
+                    'INSERT INTO user_milestones (user_id, milestone) VALUES (%s, %s)',
                     (user_id, milestone)
                 )
                 self.conn.commit()
@@ -712,14 +720,14 @@ class DatabaseManager:
 
             # 이미 획득한 카드인지 확인
             cursor.execute(
-                'SELECT 1 FROM user_cards WHERE user_id = ? AND character_name = ? AND milestone = ?',
+                'SELECT 1 FROM user_cards WHERE user_id = %s AND character_name = %s AND milestone = %s',
                 (user_id, character_name, milestone)
             )
 
             if cursor.fetchone() is None:
                 # 새로운 카드 지급 기록
                 cursor.execute(
-                    'INSERT INTO user_cards (user_id, character_name, milestone) VALUES (?, ?, ?)',
+                    'INSERT INTO user_cards (user_id, character_name, milestone) VALUES (%s, %s, %s)',
                     (user_id, character_name, milestone)
                 )
                 self.conn.commit()
@@ -734,7 +742,7 @@ class DatabaseManager:
     def get_character_ranking(self, character_name: str) -> list:
         """캐릭터별 친밀도 랭킹을 가져옵니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT a.user_id, a.emotion_score, 
@@ -742,7 +750,7 @@ class DatabaseManager:
                     FROM affinity a
                     LEFT JOIN conversation_count cc ON a.user_id = cc.user_id 
                         AND a.character_name = cc.character_name
-                    WHERE a.character_name = ?
+                    WHERE a.character_name = %s
                     ORDER BY a.emotion_score DESC, message_count DESC
                     LIMIT 10
                 ''', (character_name,))
@@ -754,7 +762,7 @@ class DatabaseManager:
     def get_total_ranking(self) -> list:
         """모든 캐릭터의 통합 친밀도와 대화 횟수 랭킹을 조회합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT a.user_id, 
@@ -800,7 +808,7 @@ class DatabaseManager:
     def get_user_character_rank(self, user_id: int, character_name: str) -> int:
         """특정 캐릭터에 대한 사용자의 순위를 조회합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     WITH CharacterMessages AS (
@@ -808,7 +816,7 @@ class DatabaseManager:
                             user_id,
                             COUNT(*) as message_count
                         FROM conversations
-                        WHERE character_name = ? 
+                        WHERE character_name = %s 
                         AND message_role = 'user'
                         GROUP BY user_id
                     ),
@@ -817,7 +825,7 @@ class DatabaseManager:
                             user_id,
                             emotion_score
                         FROM affinity
-                        WHERE character_name = ?
+                        WHERE character_name = %s
                     ),
                     RankedUsers AS (
                         SELECT 
@@ -832,7 +840,7 @@ class DatabaseManager:
                     )
                     SELECT rank 
                     FROM RankedUsers 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 ''', (character_name, character_name, user_id))
                 result = cursor.fetchone()
                 return result[0] if result else 999999
@@ -843,7 +851,7 @@ class DatabaseManager:
     def get_user_total_rank(self, user_id: int) -> int:
         """모든 캐릭터 통합 순위에서 사용자의 순위를 조회합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     WITH TotalMessages AS (
@@ -874,7 +882,7 @@ class DatabaseManager:
                     )
                     SELECT rank 
                     FROM RankedUsers 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 ''', (user_id,))
                 result = cursor.fetchone()
                 return result[0] if result else 999999
@@ -885,7 +893,7 @@ class DatabaseManager:
     def get_user_stats(self, user_id: int, character_name: str = None) -> dict:
         """사용자의 친밀도와 대화 횟수 통계를 조회합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 if character_name:
                     # 특정 캐릭터에 대한 통계
@@ -893,15 +901,15 @@ class DatabaseManager:
                         WITH CharacterMessages AS (
                             SELECT COUNT(*) as message_count
                             FROM conversations
-                            WHERE user_id = ?
-                            AND character_name = ?
+                            WHERE user_id = %s
+                            AND character_name = %s
                             AND message_role = 'user'
                         ),
                         CharacterAffinity AS (
                             SELECT emotion_score
                             FROM affinity
-                            WHERE user_id = ?
-                            AND character_name = ?
+                            WHERE user_id = %s
+                            AND character_name = %s
                         )
                         SELECT 
                             COALESCE(a.emotion_score, 0) as emotion_score,
@@ -915,13 +923,13 @@ class DatabaseManager:
                         WITH TotalMessages AS (
                             SELECT COUNT(*) as message_count
                     FROM conversations 
-                            WHERE user_id = ?
+                            WHERE user_id = %s
                     AND message_role = 'user'
                         ),
                         TotalAffinity AS (
                             SELECT SUM(emotion_score) as total_emotion
                             FROM affinity
-                            WHERE user_id = ?
+                            WHERE user_id = %s
                         )
                         SELECT 
                             COALESCE(a.total_emotion, 0) as total_emotion,
@@ -942,7 +950,7 @@ class DatabaseManager:
     def get_user_card_count(self, user_id: int, character_name: str) -> dict:
         """사용자의 카드 수집 현황 조회"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                 SELECT 
@@ -952,7 +960,7 @@ class DatabaseManager:
                     SUM(CASE WHEN card_id LIKE 'S%' THEN 1 ELSE 0 END) as s_count,
                     SUM(CASE WHEN card_id LIKE 'Special%' THEN 1 ELSE 0 END) as special_count
                 FROM user_cards
-                WHERE user_id = ? AND character_name = ?
+                WHERE user_id = %s AND character_name = %s
                 ''', (user_id, character_name))
 
                 result = cursor.fetchone()
@@ -970,12 +978,12 @@ class DatabaseManager:
     def get_story_progress(self, user_id: int, character_name: str, story_id: str) -> dict:
         """스토리 진행 상태 조회"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT current_step, completed, started_at, completed_at
                     FROM story_progress
-                    WHERE user_id = ? AND character_name = ? AND story_id = ?
+                    WHERE user_id = %s AND character_name = %s AND story_id = %s
                 ''', (user_id, character_name, story_id))
                 result = cursor.fetchone()
                 if result:
@@ -993,12 +1001,12 @@ class DatabaseManager:
     def start_story(self, user_id: int, character_name: str, story_id: str) -> bool:
         """새로운 스토리 시작"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT OR REPLACE INTO story_progress 
                     (user_id, character_name, story_id, current_step, completed)
-                    VALUES (?, ?, ?, 0, FALSE)
+                    VALUES (%s, %s, %s, 0, FALSE)
                 ''', (user_id, character_name, story_id))
                 conn.commit()
                 return True
@@ -1009,19 +1017,19 @@ class DatabaseManager:
     def update_story_progress(self, user_id: int, character_name: str, story_id: str, step: int, completed: bool = False) -> bool:
         """스토리 진행 상태 업데이트"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 if completed:
                     cursor.execute('''
                         UPDATE story_progress
-                        SET current_step = ?, completed = TRUE, completed_at = CURRENT_TIMESTAMP
-                        WHERE user_id = ? AND character_name = ? AND story_id = ?
+                        SET current_step = %s, completed = TRUE, completed_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s AND character_name = %s AND story_id = %s
                     ''', (step, user_id, character_name, story_id))
                 else:
                     cursor.execute('''
                         UPDATE story_progress
-                        SET current_step = ?
-                        WHERE user_id = ? AND character_name = ? AND story_id = ?
+                        SET current_step = %s
+                        WHERE user_id = %s AND character_name = %s AND story_id = %s
                     ''', (step, user_id, character_name, story_id))
                 conn.commit()
                 return True
@@ -1032,12 +1040,12 @@ class DatabaseManager:
     def save_story_choice(self, user_id: int, character_name: str, story_id: str, choice_index: int, choice_text: str) -> bool:
         """스토리 선택지 저장"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO story_choices 
                     (user_id, character_name, story_id, choice_index, choice_text)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                 ''', (user_id, character_name, story_id, choice_index, choice_text))
                 conn.commit()
                 return True
@@ -1048,12 +1056,12 @@ class DatabaseManager:
     def get_completed_stories(self, user_id: int, character_name: str) -> list:
         """완료된 스토리 목록 조회"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT story_id, completed_at
                     FROM story_progress
-                    WHERE user_id = ? AND character_name = ? AND completed = TRUE
+                    WHERE user_id = %s AND character_name = %s AND completed = TRUE
                     ORDER BY completed_at DESC
                 ''', (user_id, character_name))
                 return cursor.fetchall()
@@ -1065,7 +1073,7 @@ class DatabaseManager:
         """씬 점수를 저장합니다."""
         query = """
         INSERT INTO scene_scores (user_id, character_name, chapter_id, scene_id, score)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT(user_id, character_name, chapter_id, scene_id) 
         DO UPDATE SET score = excluded.score
         """
@@ -1075,7 +1083,7 @@ class DatabaseManager:
         """씬 점수를 가져옵니다."""
         query = """
         SELECT score FROM scene_scores
-        WHERE user_id = ? AND character_name = ? AND chapter_id = ? AND scene_id = ?
+        WHERE user_id = %s AND character_name = %s AND chapter_id = %s AND scene_id = %s
         """
         result = self.fetch_one(query, (user_id, character_name, chapter_id, scene_id))
         return result[0] if result else 0
@@ -1083,12 +1091,12 @@ class DatabaseManager:
     def get_completed_chapters(self, user_id: int, character_name: str) -> list:
         """사용자가 완료한 챕터 목록을 반환합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT chapter_id
                     FROM completed_chapters
-                    WHERE user_id = ? AND character_name = ?
+                    WHERE user_id = %s AND character_name = %s
                     ORDER BY chapter_id
                 ''', (user_id, character_name))
                 results = cursor.fetchall()
@@ -1100,12 +1108,12 @@ class DatabaseManager:
     def add_completed_chapter(self, user_id: int, character_name: str, chapter_id: int) -> bool:
         """사용자가 완료한 챕터를 추가합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT OR IGNORE INTO completed_chapters
                     (user_id, character_name, chapter_id, completed_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
                 ''', (user_id, character_name, chapter_id))
                 conn.commit()
                 return True
@@ -1114,10 +1122,10 @@ class DatabaseManager:
             return False
 
     def has_claimed_milestone(self, user_id, character_name, milestone):
-        conn = sqlite3.connect(self.db_name)
+        conn = self.get_conn()
         cur = conn.cursor()
         cur.execute(
-            "SELECT 1 FROM user_milestone_claims WHERE user_id=? AND character_name=? AND milestone=?",
+            "SELECT 1 FROM user_milestone_claims WHERE user_id=%s AND character_name=%s AND milestone=%s",
             (user_id, character_name, milestone)
         )
         result = cur.fetchone()
@@ -1125,39 +1133,39 @@ class DatabaseManager:
         return result is not None
 
     def set_claimed_milestone(self, user_id, character_name, milestone):
-        conn = sqlite3.connect(self.db_name)
+        conn = self.get_conn()
         cur = conn.cursor()
         cur.execute(
-            "INSERT OR IGNORE INTO user_milestone_claims (user_id, character_name, milestone, claimed_at) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO user_milestone_claims (user_id, character_name, milestone, claimed_at) VALUES (%s, %s, %s, %s)",
             (user_id, character_name, milestone, datetime.now())
         )
         conn.commit()
         conn.close()
 
     def get_last_claimed_milestone(self, user_id, character_name):
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT MAX(milestone) FROM user_milestone_claims WHERE user_id=? AND character_name=?",
+                "SELECT MAX(milestone) FROM user_milestone_claims WHERE user_id=%s AND character_name=%s",
                 (user_id, character_name)
             )
             result = cursor.fetchone()
             return result[0] if result and result[0] else 0
 
     def has_levelup_flag(self, user_id, character_name, level):
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT 1 FROM user_levelup_flags WHERE user_id=? AND character_name=? AND level=?",
+                "SELECT 1 FROM user_levelup_flags WHERE user_id=%s AND character_name=%s AND level=%s",
                 (user_id, character_name, level)
             )
             return cursor.fetchone() is not None
 
     def set_levelup_flag(self, user_id, character_name, level):
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT OR IGNORE INTO user_levelup_flags (user_id, character_name, level) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO user_levelup_flags (user_id, character_name, level) VALUES (%s, %s, %s)",
                 (user_id, character_name, level)
             )
             conn.commit()
@@ -1165,11 +1173,11 @@ class DatabaseManager:
     def set_affinity(self, user_id: int, character_name: str, value: int) -> bool:
         """관리자: 유저의 친밀도 점수를 직접 세팅합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT OR REPLACE INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
-                    VALUES (?, ?, ?, 0, date('now'))
+                    VALUES (%s, %s, %s, 0, date('now'))
                 ''', (user_id, character_name, value))
                 conn.commit()
                 return True
@@ -1180,19 +1188,19 @@ class DatabaseManager:
     def add_user_message_count(self, user_id: int, character_name: str, count: int) -> bool:
         """관리자: 유저의 메시지 수를 수동으로 추가합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 # affinity 테이블의 daily_message_count 증가
                 cursor.execute('''
                     UPDATE affinity
-                    SET daily_message_count = COALESCE(daily_message_count, 0) + ?
-                    WHERE user_id = ? AND character_name = ?
+                    SET daily_message_count = COALESCE(daily_message_count, 0) + %s
+                    WHERE user_id = %s AND character_name = %s
                 ''', (count, user_id, character_name))
                 if cursor.rowcount == 0:
                     # affinity row가 없으면 새로 생성
                     cursor.execute('''
                         INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
-                        VALUES (?, ?, 0, ?, date('now'))
+                        VALUES (%s, %s, 0, %s, date('now'))
                     ''', (user_id, character_name, count))
                 conn.commit()
                 return True
@@ -1203,12 +1211,12 @@ class DatabaseManager:
     def increment_card_issued_number(self, character_name: str, card_id: str) -> int:
         """카드 지급 시 전체 발급 순번을 1 증가시키고, 증가된 값을 반환합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 # 정확히 일치하는 카드만 처리
                 cursor.execute('''
                     SELECT issued_number FROM card_issued
-                    WHERE character_name = ? AND card_id = ?
+                    WHERE character_name = %s AND card_id = %s
                 ''', (character_name, card_id))
                 result = cursor.fetchone()
                 if result:
@@ -1217,14 +1225,14 @@ class DatabaseManager:
                         print(f"Warning: Card number limit reached for {character_name} {card_id}")
                         return 10000
                     cursor.execute('''
-                        UPDATE card_issued SET issued_number = ?
-                        WHERE character_name = ? AND card_id = ?
+                        UPDATE card_issued SET issued_number = %s
+                        WHERE character_name = %s AND card_id = %s
                     ''', (new_number, character_name, card_id))
                 else:
                     new_number = 1
                     cursor.execute('''
                         INSERT INTO card_issued (character_name, card_id, issued_number)
-                        VALUES (?, ?, ?)
+                        VALUES (%s, %s, %s)
                     ''', (character_name, card_id, new_number))
                 conn.commit()
                 return new_number
@@ -1235,11 +1243,11 @@ class DatabaseManager:
     def get_card_issued_number(self, character_name: str, card_id: str) -> int:
         """해당 카드의 전체 서버 기준 발급 순번을 반환합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with self.get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT issued_number FROM card_issued
-                    WHERE character_name = ? AND card_id = ?
+                    WHERE character_name = %s AND card_id = %s
                 ''', (character_name, card_id))
                 result = cursor.fetchone()
                 return result[0] if result else 0
@@ -1248,10 +1256,10 @@ class DatabaseManager:
             return 0
 
     def log_emotion_score(self, user_id: int, character_name: str, score: int, message: str):
-        with sqlite3.connect(self.db_name) as conn:
+        with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO emotion_log (user_id, character_name, score, message)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
             ''', (user_id, character_name, score, message))
             conn.commit() 

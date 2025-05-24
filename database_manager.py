@@ -7,7 +7,7 @@ import psycopg2
 import os
 
 # Railway 환경변수에서 DATABASE_URL 읽기
-DATABASE_URL = os.environ.get("DATABASE_URL", "${{ Postgres.DATABASE_URL }}")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -25,7 +25,7 @@ class DatabaseManager:
         print("Setting up database tables...")
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
-                # 대화 기록 테이블
+                # conversations 테이블 생성
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS conversations (
                         id SERIAL PRIMARY KEY,

@@ -22,8 +22,6 @@ from config import (
 )
 from distutils import core
 from openai_manager import analyze_emotion_with_gpt_and_pattern
-import psycopg2
-from database_manager import DATABASE_URL
 
 # Load environment variables
 load_dotenv()
@@ -375,63 +373,74 @@ class CharacterBot(commands.Bot):
 
 class DatabaseManager:
     def __init__(self):
+        self.db_name = "chatbot.db"
         self.setup_database()
 
     def setup_database(self):
-        with psycopg2.connect(DATABASE_URL) as conn:
+        """데이터베이스 초기화"""
+        with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
+
+            # 대화 기록 테이블 수정
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
-                    id SERIAL PRIMARY KEY,
-                    channel_id BIGINT,
-                    user_id BIGINT,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id INTEGER,
+                    user_id INTEGER,
                     character_name TEXT,
                     message_role TEXT,
                     content TEXT,
                     language TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(channel_id, user_id, character_name, timestamp)
                 )
             ''')
+
+            # 사용자별 대화 컨텍스트 테이블 추가
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_context (
-                    user_id BIGINT,
+                    user_id INTEGER,
                     character_name TEXT,
                     last_conversation TEXT,
                     last_language TEXT,
-                    last_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_interaction DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, character_name)
                 )
             ''')
+
+            # 친밀도 테이블 수정
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS affinity (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
                     character_name TEXT,
                     emotion_score INTEGER DEFAULT 0,
                     daily_message_count INTEGER DEFAULT 0,
-                    last_daily_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_message_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_daily_reset TEXT DEFAULT (date('now')),
+                    last_message_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                     last_message_content TEXT,
                     UNIQUE(user_id, character_name)
                 )
             ''')
+
+
             conn.commit()
 
     def add_message(self, channel_id: int, user_id: int, character_name: str, 
                    role: str, content: str):
         """새 메시지 추가"""
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO conversations 
                 (channel_id, user_id, character_name, message_role, content)
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?)
             ''', (channel_id, user_id, character_name, role, content))
             conn.commit()
 
     def get_recent_messages(self, channel_id: int, limit: int = 10, user_id: int = None):
         """채널의 최근 메시지 가져오기"""
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
 
             if user_id is not None:
@@ -439,18 +448,18 @@ class DatabaseManager:
                 cursor.execute('''
                     SELECT message_role, content 
                     FROM conversations 
-                    WHERE channel_id = %s AND user_id = %s
+                    WHERE channel_id = ? AND user_id = ?
                     ORDER BY timestamp DESC
-                    LIMIT %s
+                    LIMIT ?
                 ''', (channel_id, user_id, limit))
             else:
                 # 채널의 모든 메시지 가져오기
                 cursor.execute('''
                     SELECT message_role, content 
                     FROM conversations 
-                    WHERE channel_id = %s
+                    WHERE channel_id = ?
                     ORDER BY timestamp DESC
-                    LIMIT %s
+                    LIMIT ?
                 ''', (channel_id, limit))
 
             messages = cursor.fetchall()
@@ -459,28 +468,28 @@ class DatabaseManager:
 
     def get_affinity(self, user_id: int, character_name: str):
         """사용자의 특정 캐릭터와의 친밀도 정보 조회"""
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
 
             # 현재 날짜와 마지막 리셋 날짜가 다르면 daily_count 리셋
             cursor.execute('''
                 UPDATE affinity 
                 SET daily_message_count = 0, last_daily_reset = date('now')
-                WHERE user_id = %s 
-                AND character_name = %s
+                WHERE user_id = ? 
+                AND character_name = ?
                 AND last_daily_reset < date('now')
             ''', (user_id, character_name))
 
             # 친밀도 정보 조회
             cursor.execute('''
                 INSERT OR IGNORE INTO affinity (user_id, character_name)
-                VALUES (%s, %s)
+                VALUES (?, ?)
             ''', (user_id, character_name))
 
             cursor.execute('''
                 SELECT emotion_score, daily_message_count
                 FROM affinity
-                WHERE user_id = %s AND character_name = %s
+                WHERE user_id = ? AND character_name = ?
             ''', (user_id, character_name))
 
             result = cursor.fetchone()
@@ -494,14 +503,14 @@ class DatabaseManager:
     def update_affinity(self, user_id: int, character_name: str, 
                        last_message: str, last_message_time: str, score_change: int):
         """친밀도 정보 업데이트"""
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
 
             # 현재 친밀도 정보 가져오기
             cursor.execute('''
                 SELECT emotion_score, daily_message_count
                 FROM affinity
-                WHERE user_id = %s AND character_name = %s
+                WHERE user_id = ? AND character_name = ?
             ''', (user_id, character_name))
 
             result = cursor.fetchone()
@@ -513,7 +522,7 @@ class DatabaseManager:
                 INSERT OR REPLACE INTO affinity 
                 (user_id, character_name, emotion_score, daily_message_count, 
                 last_message_content, last_message_time)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', (user_id, character_name, current_score + score_change, 
                   daily_count + 1, last_message, last_message_time))
 
@@ -521,7 +530,7 @@ class DatabaseManager:
 
     def get_affinity_ranking(self):
         """전체 친밀도 랭킹 조회"""
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT user_id, SUM(emotion_score) as total_score
@@ -536,20 +545,20 @@ class DatabaseManager:
     def reset_affinity(self, user_id: int, character_name: str) -> bool:
         """특정 유저의 친밀도 초기화"""
         try:
-            with psycopg2.connect(DATABASE_URL) as conn:
+            with sqlite3.connect(self.db_name) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE affinity
                     SET emotion_score = 0,
                         daily_message_count = 0,
                         last_daily_reset = date('now')
-                    WHERE user_id = %s AND character_name = %s
+                    WHERE user_id = ? AND character_name = ?
                 ''', (user_id, character_name))
 
                 if cursor.rowcount == 0:
                     cursor.execute('''
                         INSERT INTO affinity (user_id, character_name)
-                        VALUES (%s, %s)
+                        VALUES (?, ?)
                     ''', (user_id, character_name))
 
                 conn.commit()
@@ -561,14 +570,14 @@ class DatabaseManager:
     def reset_all_affinity(self, character_name: str) -> bool:
         """모든 유저의 친밀도 초기화"""
         try:
-            with psycopg2.connect(DATABASE_URL) as conn:
+            with sqlite3.connect(self.db_name) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE affinity
                     SET emotion_score = 0,
                         daily_message_count = 0,
                         last_daily_reset = date('now')
-                    WHERE character_name = %s
+                    WHERE character_name = ?
                 ''', (character_name,))
 
                 conn.commit()

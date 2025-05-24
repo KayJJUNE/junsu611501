@@ -1,68 +1,37 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import os
 from typing import Optional, Dict
 import asyncio
 import random
-import sqlite3
+import psycopg2
+
+from bot_selector import LanguageSelectView
+from database_manager import DATABASE_URL, DatabaseManager
 
 class CharacterBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-
+        
         super().__init__(
             command_prefix="!",
             intents=intents,
             help_command=None
         )
-
+        
         # Character images
         self.character_images = {
-            "kagari": "/home/runner/workspace/assets/kagari.png",
-            "eros": "/home/runner/workspace/assets/eros.png",
-            "elysia": "/home/runner/workspace/assets/elysia.png"
+            "kagari": os.path.join("assets", "kagari.png"),
+            "eros": os.path.join("assets", "eros.png"),
+            "elysia": os.path.join("assets", "elysia.png")
         }
-
-        # Active channels for auto-questions
-        self.active_channels: Dict[int, bool] = {}
-        self.question_interval = 300  # 5 minutes
-
+        
     async def setup_hook(self):
         """Initial setup after the bot is ready"""
-        self.auto_question.start()
         await self.tree.sync()
-
-    @tasks.loop(seconds=300)
-    async def auto_question(self):
-        """Automatically send questions to active channels"""
-        for channel_id, is_active in self.active_channels.items():
-            if is_active:
-                channel = self.get_channel(channel_id)
-                if channel:
-                    questions = [
-                        "오늘 하루는 어땠나요?",
-                        "지금 기분이 어떠신가요?",
-                        "가장 좋아하는 음식은 무엇인가요?",
-                        "최근에 본 영화나 드라마가 있나요?",
-                        "오늘 가장 기억에 남는 순간은 무엇인가요?"
-                    ]
-                    question = random.choice(questions)
-                    await channel.send(question)
-
-    @commands.command()
-    async def start(self, ctx):
-        """Start auto-questions in the channel"""
-        self.active_channels[ctx.channel.id] = True
-        await ctx.send("자동 질문 기능이 활성화되었습니다!")
-
-    @commands.command()
-    async def stop(self, ctx):
-        """Stop auto-questions in the channel"""
-        self.active_channels[ctx.channel.id] = False
-        await ctx.send("자동 질문 기능이 비활성화되었습니다!")
-
+        
     @commands.command()
     async def character(self, ctx, name: str):
         """Show character information with image"""
@@ -78,23 +47,18 @@ class CharacterBot(commands.Bot):
     def set_user_language(self, user_id: int, character_name: str, language: str) -> bool:
         """사용자의 특정 캐릭터와의 대화 언어를 설정합니다."""
         try:
-            with sqlite3.connect(self.db_name) as conn:
+            with psycopg2.connect(DATABASE_URL) as conn:
                 cursor = conn.cursor()
-
-                # conversations 테이블의 language 컬럼 업데이트
                 cursor.execute('''
                     UPDATE conversations
-                    SET language = ?
-                    WHERE user_id = ? AND character_name = ?
+                    SET language = %s
+                    WHERE user_id = %s AND character_name = %s
                 ''', (language, user_id, character_name))
-
-                # user_context 테이블에 언어 설정 저장
                 cursor.execute('''
-                    INSERT OR REPLACE INTO user_context 
-                    (user_id, character_name, last_language, last_interaction)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO user_context (user_id, character_name, last_language, last_interaction)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, character_name) DO UPDATE SET last_language = EXCLUDED.last_language, last_interaction = EXCLUDED.last_interaction
                 ''', (user_id, character_name, language))
-
                 conn.commit()
                 return True
         except Exception as e:

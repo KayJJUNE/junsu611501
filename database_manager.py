@@ -7,7 +7,7 @@ import psycopg2
 import os
 
 # Railway 환경변수에서 DATABASE_URL 읽기
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL", "${{ Postgres.DATABASE_URL }}")
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -22,10 +22,10 @@ class DatabaseManager:
 
     def setup_database(self):
         """데이터베이스 초기화"""
-        print("Setting up database tables...")
+        print("Setting up database tables for PostgreSQL...")
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
-                # conversations 테이블 생성
+                # conversations
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS conversations (
                         id SERIAL PRIMARY KEY,
@@ -38,25 +38,21 @@ class DatabaseManager:
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                print("Created conversations table")
-
-                # 친밀도 테이블
+                # affinity
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS affinity (
                         id SERIAL PRIMARY KEY,
                         user_id BIGINT,
                         character_name TEXT,
-                        emotion_score BIGINT DEFAULT 0,
-                        daily_message_count BIGINT DEFAULT 0,
-                        last_daily_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        emotion_score INTEGER DEFAULT 0,
+                        daily_message_count INTEGER DEFAULT 0,
+                        last_daily_reset DATE DEFAULT CURRENT_DATE,
                         last_message_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         last_message_content TEXT,
                         UNIQUE(user_id, character_name)
                     )
                 ''')
-                print("Created affinity table")
-
-                # 사용자 언어 설정 테이블
+                # user_language
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS user_language (
                         id SERIAL PRIMARY KEY,
@@ -68,9 +64,7 @@ class DatabaseManager:
                         UNIQUE(channel_id, user_id, character_name)
                     )
                 ''')
-                print("Created user_language table")
-
-                # 카드 테이블
+                # user_cards
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS user_cards (
                         user_id BIGINT,
@@ -80,26 +74,22 @@ class DatabaseManager:
                         PRIMARY KEY (user_id, character_name, card_id)
                     )
                 ''')
-                print("Created user_cards table")
-
-                # 대화 수 추적 테이블
+                # conversation_count
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS conversation_count (
                         id SERIAL PRIMARY KEY,
                         channel_id BIGINT,
                         user_id BIGINT,
                         character_name TEXT,
-                        message_count BIGINT DEFAULT 0,
-                        last_milestone BIGINT DEFAULT 0,
+                        message_count INTEGER DEFAULT 0,
+                        last_milestone INTEGER DEFAULT 0,
                         UNIQUE(channel_id, user_id, character_name)
                     )
                 ''')
-                print("Created conversation_count table")
-
-                # 스토리 진행 상태 테이블
+                # story_progress
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS story_progress (
-                        user_id TEXT,
+                        user_id BIGINT,
                         character_name TEXT,
                         chapter_number INTEGER,
                         completed_at TIMESTAMP,
@@ -108,9 +98,7 @@ class DatabaseManager:
                         PRIMARY KEY (user_id, character_name, chapter_number)
                     )
                 ''')
-                print("Created story_progress table")
-
-                # 스토리 해금 상태 테이블
+                # story_unlocks
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS story_unlocks (
                         user_id BIGINT,
@@ -120,9 +108,7 @@ class DatabaseManager:
                         PRIMARY KEY (user_id, character_name, chapter_id)
                     )
                 ''')
-                print("Created story_unlocks table")
-
-                # 스토리 선택지 테이블
+                # story_choices
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS story_choices (
                         id SERIAL PRIMARY KEY,
@@ -134,22 +120,18 @@ class DatabaseManager:
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                print("Created story_choices table")
-
-                # 씬 점수 테이블
+                # scene_scores
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS scene_scores (
                         user_id BIGINT,
                         character_name TEXT,
                         chapter_id INTEGER,
                         scene_id INTEGER,
-                        score BIGINT,
+                        score INTEGER,
                         PRIMARY KEY (user_id, character_name, chapter_id, scene_id)
                     )
                 ''')
-                print("Created scene_scores table")
-
-                # 완료된 챕터 테이블
+                # completed_chapters
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS completed_chapters (
                         id SERIAL PRIMARY KEY,
@@ -160,9 +142,7 @@ class DatabaseManager:
                         UNIQUE(user_id, character_name, chapter_id)
                     )
                 ''')
-                print("Created completed_chapters table")
-
-                # 마일스톤 지급 이력 테이블 생성
+                # user_milestone_claims
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS user_milestone_claims (
                         user_id BIGINT,
@@ -172,9 +152,7 @@ class DatabaseManager:
                         PRIMARY KEY (user_id, character_name, milestone)
                     )
                 ''')
-                print("Created user_milestone_claims table")
-
-                # 레벨업 플래그 테이블
+                # user_levelup_flags
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS user_levelup_flags (
                         user_id BIGINT,
@@ -184,41 +162,39 @@ class DatabaseManager:
                         PRIMARY KEY (user_id, character_name, level)
                     )
                 ''')
-                print("Created user_levelup_flags table")
-
-                # 카드 발급 순번 테이블 추가
+                # card_issued
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS card_issued (
                         character_name TEXT,
                         card_id TEXT,
-                        issued_number BIGINT DEFAULT 0,
+                        issued_number INTEGER DEFAULT 0,
                         PRIMARY KEY (character_name, card_id)
                     )
                 ''')
-                print("Created card_issued table")
-
-                # 감정 점수 기록 테이블 추가
+                # emotion_log
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS emotion_log (
                         id SERIAL PRIMARY KEY,
                         user_id BIGINT,
                         character_name TEXT,
-                        score BIGINT,
+                        score INTEGER,
                         message TEXT,
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                print("Created emotion_log table")
-
                 conn.commit()
-                print("All database tables have been created successfully")
+                print("All PostgreSQL tables have been created successfully.")
 
     def get_channel_language(self, channel_id: int, user_id: int, character_name: str) -> str:
         """채널의 언어 설정을 가져옵니다."""
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT language FROM user_language WHERE user_id = %s AND character_name = %s", (user_id, character_name))
+                    cursor.execute('''
+                        SELECT language
+                        FROM user_language
+                        WHERE user_id = %s AND character_name = %s
+                    ''', (user_id, character_name))
                     result = cursor.fetchone()
                     return result[0] if result else 'en'
         except Exception as e:
@@ -230,20 +206,25 @@ class DatabaseManager:
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
-                    # 기존 설정이 있는지 확인
-                    cursor.execute("SELECT language FROM user_language WHERE channel_id = %s AND user_id = %s AND character_name = %s", (channel_id, user_id, character_name))
+                    cursor.execute('''
+                        SELECT language FROM user_language 
+                        WHERE channel_id = %s AND user_id = %s AND character_name = %s
+                    ''', (channel_id, user_id, character_name))
                     result = cursor.fetchone()
-
                     if result:
-                        # 기존 설정 업데이트
-                        cursor.execute("UPDATE user_language SET language = %s, updated_at = CURRENT_TIMESTAMP WHERE channel_id = %s AND user_id = %s AND character_name = %s", (language, channel_id, user_id, character_name))
+                        cursor.execute('''
+                            UPDATE user_language 
+                            SET language = %s, updated_at = CURRENT_TIMESTAMP
+                            WHERE channel_id = %s AND user_id = %s AND character_name = %s
+                        ''', (language, channel_id, user_id, character_name))
                     else:
-                        # 새로운 설정 추가
-                        cursor.execute("INSERT INTO user_language (channel_id, user_id, character_name, language) VALUES (%s, %s, %s, %s)", (channel_id, user_id, character_name, language))
-
+                        cursor.execute('''
+                            INSERT INTO user_language 
+                            (channel_id, user_id, character_name, language)
+                            VALUES (%s, %s, %s, %s)
+                        ''', (channel_id, user_id, character_name, language))
                     conn.commit()
                     return True
-
         except Exception as e:
             print(f"Error in set_channel_language: {e}")
             return False
@@ -322,7 +303,6 @@ class DatabaseManager:
                         'last_reset': result[2],
                         'last_time': result[3]
                     }
-
         except Exception as e:
             print(f"Database error in get_affinity: {e}")
             return {

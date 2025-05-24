@@ -182,8 +182,8 @@ class DatabaseManager:
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                conn.commit()
-                print("All PostgreSQL tables have been created successfully.")
+            conn.commit()
+        print("All PostgreSQL tables have been created successfully.")
 
     def get_channel_language(self, channel_id: int, user_id: int, character_name: str) -> str:
         """채널의 언어 설정을 가져옵니다."""
@@ -193,7 +193,7 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT language
                         FROM user_language
-                        WHERE user_id = %s AND character_name = %s
+                            WHERE user_id = %s AND character_name = %s
                     ''', (user_id, character_name))
                     result = cursor.fetchone()
                     return result[0] if result else 'en'
@@ -208,20 +208,20 @@ class DatabaseManager:
                 with conn.cursor() as cursor:
                     cursor.execute('''
                         SELECT language FROM user_language 
-                        WHERE channel_id = %s AND user_id = %s AND character_name = %s
+                            WHERE channel_id = %s AND user_id = %s AND character_name = %s
                     ''', (channel_id, user_id, character_name))
                     result = cursor.fetchone()
                     if result:
                         cursor.execute('''
                             UPDATE user_language 
-                            SET language = %s, updated_at = CURRENT_TIMESTAMP
-                            WHERE channel_id = %s AND user_id = %s AND character_name = %s
+                                SET language = %s, updated_at = CURRENT_TIMESTAMP
+                                WHERE channel_id = %s AND user_id = %s AND character_name = %s
                         ''', (language, channel_id, user_id, character_name))
                     else:
                         cursor.execute('''
                             INSERT INTO user_language 
                             (channel_id, user_id, character_name, language)
-                            VALUES (%s, %s, %s, %s)
+                                VALUES (%s, %s, %s, %s)
                         ''', (channel_id, user_id, character_name, language))
                     conn.commit()
                     return True
@@ -236,9 +236,9 @@ class DatabaseManager:
                 cursor.execute('''
                     INSERT INTO conversations 
                     (channel_id, user_id, character_name, message_role, content, language)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                 ''', (channel_id, user_id, character_name, role, content, language))
-                conn.commit()
+            conn.commit()
 
     def get_recent_messages(self, channel_id: int, limit: int = 10):
         """채널의 최근 메시지 가져오기"""
@@ -247,9 +247,9 @@ class DatabaseManager:
                 cursor.execute('''
                     SELECT message_role, content 
                     FROM conversations 
-                    WHERE channel_id = %s 
+                        WHERE channel_id = %s 
                     ORDER BY timestamp DESC 
-                    LIMIT %s
+                        LIMIT %s
                 ''', (channel_id, limit))
                 messages = cursor.fetchall()
                 return [{"role": role, "content": content} for role, content in reversed(messages)]
@@ -265,17 +265,18 @@ class DatabaseManager:
                     cursor.execute('''
                         UPDATE affinity 
                         SET daily_message_count = 0, 
-                            last_daily_reset = %s
-                        WHERE user_id = %s 
-                        AND character_name = %s
-                        AND last_daily_reset < %s
+                                last_daily_reset = %s
+                            WHERE user_id = %s 
+                            AND character_name = %s
+                            AND last_daily_reset < %s
                     ''', (current_date, user_id, character_name, current_date))
 
                     # 친밀도 정보가 없으면 생성
                     cursor.execute('''
-                        INSERT OR IGNORE INTO affinity 
+                        INSERT INTO affinity 
                         (user_id, character_name, emotion_score, daily_message_count, last_daily_reset) 
-                        VALUES (%s, %s, 0, 0, %s)
+                            VALUES (%s, %s, 0, 0, %s)
+                        ON CONFLICT (user_id, character_name) DO NOTHING
                     ''', (user_id, character_name, current_date))
 
                     # 친밀도 정보 조회
@@ -283,7 +284,7 @@ class DatabaseManager:
                         SELECT emotion_score, daily_message_count,
                                last_daily_reset, last_message_time
                         FROM affinity
-                        WHERE user_id = %s AND character_name = %s
+                            WHERE user_id = %s AND character_name = %s
                     ''', (user_id, character_name))
 
                     result = cursor.fetchone()
@@ -324,10 +325,10 @@ class DatabaseManager:
                     INSERT OR REPLACE INTO affinity 
                     (user_id, character_name, emotion_score, daily_message_count, 
                     last_message_content, last_message_time)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                 ''', (user_id, character_name, current_score + score_change, 
                       daily_count + 1, last_message, last_message_time))
-                conn.commit()
+            conn.commit()
 
     def reset_affinity(self, user_id: int, character_name: str) -> bool:
         """특정 유저의 친밀도 초기화"""
@@ -338,14 +339,14 @@ class DatabaseManager:
                         UPDATE affinity
                         SET emotion_score = 0,
                             daily_message_count = 0,
-                            last_daily_reset = CURRENT_DATE
-                        WHERE user_id = %s AND character_name = %s
+                                last_daily_reset = CURRENT_DATE
+                            WHERE user_id = %s AND character_name = %s
                     ''', (user_id, character_name))
 
                     if cursor.rowcount == 0:
                         cursor.execute('''
                             INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
-                            VALUES (%s, %s, 0, 0, CURRENT_DATE)
+                                VALUES (%s, %s, 0, 0, CURRENT_DATE)
                         ''', (user_id, character_name))
 
                     conn.commit()
@@ -363,8 +364,8 @@ class DatabaseManager:
                         UPDATE affinity
                         SET emotion_score = 0,
                             daily_message_count = 0,
-                            last_daily_reset = CURRENT_DATE
-                        WHERE character_name = %s
+                                last_daily_reset = CURRENT_DATE
+                            WHERE character_name = %s
                     ''', (character_name,))
                     conn.commit()
                     return True
@@ -380,7 +381,7 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT user_id, score
                         FROM affinity
-                        WHERE character_name = %s AND score > 0
+                            WHERE character_name = %s AND score > 0
                         ORDER BY score DESC
                         LIMIT 10
                     ''', (character_name,))
@@ -416,7 +417,7 @@ class DatabaseManager:
                 cursor.execute('''
                     SELECT language
                     FROM channel_settings
-                    WHERE channel_id = %s AND user_id = %s AND character_name = %s
+                        WHERE channel_id = %s AND user_id = %s AND character_name = %s
                 ''', (channel_id, user_id, character_name))
                 result = cursor.fetchone()
                 if result:
@@ -444,13 +445,13 @@ class DatabaseManager:
                     if character_name:
                         cursor.execute('''
                             SELECT card_id FROM user_cards
-                            WHERE user_id = %s AND character_name = %s
+                                WHERE user_id = %s AND character_name = %s
                             ORDER BY card_id
                         ''', (user_id, character_name))
                     else:
                         cursor.execute('''
                             SELECT character_name, card_id FROM user_cards
-                            WHERE user_id = %s
+                                WHERE user_id = %s
                             ORDER BY character_name, card_id
                         ''', (user_id,))
                     return [row[0] for row in cursor.fetchall()]
@@ -465,7 +466,7 @@ class DatabaseManager:
                 with conn.cursor() as cursor:
                     cursor.execute('''
                         SELECT COUNT(*) FROM user_cards
-                        WHERE user_id = %s AND character_name = %s AND card_id = %s
+                            WHERE user_id = %s AND character_name = %s AND card_id = %s
                     ''', (user_id, character_name, card_id))
                     return cursor.fetchone()[0] > 0
         except Exception as e:
@@ -478,9 +479,9 @@ class DatabaseManager:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
-                        INSERT OR IGNORE INTO user_cards
-                        (user_id, character_name, card_id)
+                        INSERT INTO user_cards (user_id, character_name, card_id)
                         VALUES (%s, %s, %s)
+                        ON CONFLICT (user_id, character_name, card_id) DO NOTHING
                     ''', (user_id, character_name, card_id))
                     issued_number = 0
                     if cursor.rowcount > 0:
@@ -499,9 +500,9 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT message_role, content, timestamp
                         FROM conversations 
-                        WHERE user_id = %s AND character_name = %s
+                            WHERE user_id = %s AND character_name = %s
                         ORDER BY timestamp DESC 
-                        LIMIT %s
+                            LIMIT %s
                     ''', (user_id, character_name, limit))
                     messages = cursor.fetchall()
                     return [{
@@ -521,9 +522,9 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT character_name, message_role, content, timestamp
                         FROM conversations 
-                        WHERE user_id = %s
+                            WHERE user_id = %s
                         ORDER BY timestamp DESC 
-                        LIMIT %s
+                            LIMIT %s
                     ''', (user_id, limit))
                     messages = cursor.fetchall()
                     return [{
@@ -544,7 +545,7 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT COUNT(*) 
                         FROM conversations 
-                        WHERE user_id = %s AND message_role = 'user'
+                            WHERE user_id = %s AND message_role = 'user'
                     ''', (user_id,))
                     result = cursor.fetchone()
                     return result[0] if result else 0
@@ -560,7 +561,7 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT last_milestone 
                         FROM conversation_count 
-                        WHERE user_id = %s
+                            WHERE user_id = %s
                     ''', (user_id,))
                     result = cursor.fetchone()
                     return result[0] if result else 0
@@ -574,19 +575,22 @@ class DatabaseManager:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
-                        INSERT OR REPLACE INTO conversation_count 
+                        INSERT INTO conversation_count 
                         (user_id, message_count, last_milestone)
-                        VALUES (%s,
-                                COALESCE(
-                                    (SELECT COUNT(*) 
-                                    FROM conversations 
-                                    WHERE user_id = %s AND message_role = 'user'),
-                                    0
-                                ),
-                                %s)
+                            VALUES (%s,
+                            COALESCE(
+                                (SELECT COUNT(*) 
+                                FROM conversations 
+                                        WHERE user_id = %s AND message_role = 'user'),
+                                0
+                            ),
+                                    %s)
+                        ON CONFLICT (user_id) DO UPDATE 
+                        SET message_count = EXCLUDED.message_count,
+                            last_milestone = EXCLUDED.last_milestone
                     ''', (user_id, user_id, milestone))
                     conn.commit()
-                    return True
+                return True
         except Exception as e:
             print(f"Error updating last milestone: {e}")
             return False
@@ -635,7 +639,7 @@ class DatabaseManager:
                     # 마일스톤 테이블이 없으면 생성
                     cursor.execute('''
                         CREATE TABLE IF NOT EXISTS user_milestones (
-                            user_id BIGINT,
+                                    user_id BIGINT,
                             milestone INTEGER,
                             achieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             PRIMARY KEY (user_id, milestone)
@@ -644,16 +648,16 @@ class DatabaseManager:
 
                     # 이미 달성한 마일스톤인지 확인
                     cursor.execute(
-                        'SELECT 1 FROM user_milestones WHERE user_id = %s AND milestone = %s',
+                                'SELECT 1 FROM user_milestones WHERE user_id = %s AND milestone = %s',
                         (user_id, milestone)
                     )
 
                     if cursor.fetchone() is None:
                         # 새로운 마일스톤 달성 기록
                         cursor.execute(
-                            'INSERT INTO user_milestones (user_id, milestone) VALUES (%s, %s)',
-                            (user_id, milestone)
-                        )
+                                    'INSERT INTO user_milestones (user_id, milestone) VALUES (%s, %s)',
+                        (user_id, milestone)
+                    )
                         conn.commit()
                         return True
 
@@ -673,7 +677,7 @@ class DatabaseManager:
                     # 카드 테이블이 없으면 생성
                     cursor.execute('''
                         CREATE TABLE IF NOT EXISTS user_cards (
-                            user_id BIGINT,
+                                    user_id BIGINT,
                             character_name TEXT,
                             milestone INTEGER,
                             acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -683,16 +687,16 @@ class DatabaseManager:
 
                     # 이미 획득한 카드인지 확인
                     cursor.execute(
-                        'SELECT 1 FROM user_cards WHERE user_id = %s AND character_name = %s AND milestone = %s',
+                                'SELECT 1 FROM user_cards WHERE user_id = %s AND character_name = %s AND milestone = %s',
                         (user_id, character_name, milestone)
                     )
 
                     if cursor.fetchone() is None:
                         # 새로운 카드 지급 기록
                         cursor.execute(
-                            'INSERT INTO user_cards (user_id, character_name, milestone) VALUES (%s, %s, %s)',
-                            (user_id, character_name, milestone)
-                        )
+                                    'INSERT INTO user_cards (user_id, character_name, milestone) VALUES (%s, %s, %s)',
+                        (user_id, character_name, milestone)
+                    )
                         conn.commit()
                         return True
 
@@ -713,7 +717,7 @@ class DatabaseManager:
                         FROM affinity a
                         LEFT JOIN conversation_count cc ON a.user_id = cc.user_id 
                             AND a.character_name = cc.character_name
-                        WHERE a.character_name = %s
+                            WHERE a.character_name = %s
                         ORDER BY a.emotion_score DESC, message_count DESC
                         LIMIT 10
                     ''', (character_name,))
@@ -779,7 +783,7 @@ class DatabaseManager:
                                 user_id,
                                 COUNT(*) as message_count
                             FROM conversations
-                            WHERE character_name = %s 
+                                WHERE character_name = %s 
                             AND message_role = 'user'
                             GROUP BY user_id
                         ),
@@ -788,7 +792,7 @@ class DatabaseManager:
                                 user_id,
                                 emotion_score
                             FROM affinity
-                            WHERE character_name = %s
+                                WHERE character_name = %s
                         ),
                         RankedUsers AS (
                             SELECT 
@@ -803,7 +807,7 @@ class DatabaseManager:
                         )
                         SELECT rank 
                         FROM RankedUsers 
-                        WHERE user_id = %s
+                            WHERE user_id = %s
                     ''', (character_name, character_name, user_id))
                     result = cursor.fetchone()
                     return result[0] if result else 999999
@@ -845,7 +849,7 @@ class DatabaseManager:
                         )
                         SELECT rank 
                         FROM RankedUsers 
-                        WHERE user_id = %s
+                            WHERE user_id = %s
                     ''', (user_id,))
                     result = cursor.fetchone()
                     return result[0] if result else 999999
@@ -864,15 +868,15 @@ class DatabaseManager:
                             WITH CharacterMessages AS (
                                 SELECT COUNT(*) as message_count
                                 FROM conversations
-                                WHERE user_id = %s
-                                AND character_name = %s
+                                    WHERE user_id = %s
+                                    AND character_name = %s
                                 AND message_role = 'user'
                             ),
                             CharacterAffinity AS (
                                 SELECT emotion_score
                                 FROM affinity
-                                WHERE user_id = %s
-                                AND character_name = %s
+                                    WHERE user_id = %s
+                                    AND character_name = %s
                             )
                             SELECT 
                                 COALESCE(a.emotion_score, 0) as emotion_score,
@@ -885,14 +889,14 @@ class DatabaseManager:
                         cursor.execute('''
                             WITH TotalMessages AS (
                                 SELECT COUNT(*) as message_count
-                            FROM conversations 
-                                WHERE user_id = %s
-                            AND message_role = 'user'
+                        FROM conversations 
+                                    WHERE user_id = %s
+                        AND message_role = 'user'
                             ),
                             TotalAffinity AS (
                                 SELECT SUM(emotion_score) as total_emotion
                                 FROM affinity
-                                WHERE user_id = %s
+                                    WHERE user_id = %s
                             )
                             SELECT 
                                 COALESCE(a.total_emotion, 0) as total_emotion,
@@ -916,14 +920,14 @@ class DatabaseManager:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
-                    SELECT 
-                        SUM(CASE WHEN card_id LIKE 'C%' THEN 1 ELSE 0 END) as c_count,
-                        SUM(CASE WHEN card_id LIKE 'B%' THEN 1 ELSE 0 END) as b_count,
-                        SUM(CASE WHEN card_id LIKE 'A%' THEN 1 ELSE 0 END) as a_count,
-                        SUM(CASE WHEN card_id LIKE 'S%' THEN 1 ELSE 0 END) as s_count,
-                        SUM(CASE WHEN card_id LIKE 'Special%' THEN 1 ELSE 0 END) as special_count
-                    FROM user_cards
-                    WHERE user_id = %s AND character_name = %s
+                        SELECT 
+                            SUM(CASE WHEN card_id LIKE 'C%' THEN 1 ELSE 0 END) as c_count,
+                            SUM(CASE WHEN card_id LIKE 'B%' THEN 1 ELSE 0 END) as b_count,
+                            SUM(CASE WHEN card_id LIKE 'A%' THEN 1 ELSE 0 END) as a_count,
+                            SUM(CASE WHEN card_id LIKE 'S%' THEN 1 ELSE 0 END) as s_count,
+                            SUM(CASE WHEN card_id LIKE 'Special%' THEN 1 ELSE 0 END) as special_count
+                        FROM user_cards
+                            WHERE user_id = %s AND character_name = %s
                     ''', (user_id, character_name))
 
                     result = cursor.fetchone()
@@ -946,7 +950,7 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT current_step, completed, started_at, completed_at
                         FROM story_progress
-                        WHERE user_id = %s AND character_name = %s AND story_id = %s
+                            WHERE user_id = %s AND character_name = %s AND story_id = %s
                     ''', (user_id, character_name, story_id))
                     result = cursor.fetchone()
                     if result:
@@ -967,9 +971,13 @@ class DatabaseManager:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
-                        INSERT OR REPLACE INTO story_progress 
+                        INSERT INTO story_progress 
                         (user_id, character_name, story_id, current_step, completed)
-                        VALUES (%s, %s, %s, 0, FALSE)
+                            VALUES (%s, %s, %s, 0, FALSE)
+                        ON CONFLICT (user_id, character_name, chapter_number) 
+                        DO UPDATE SET 
+                            current_step = EXCLUDED.current_step,
+                            completed = EXCLUDED.completed
                     ''', (user_id, character_name, story_id))
                     conn.commit()
                     return True
@@ -985,14 +993,14 @@ class DatabaseManager:
                     if completed:
                         cursor.execute('''
                             UPDATE story_progress
-                            SET current_step = %s, completed = TRUE, completed_at = CURRENT_TIMESTAMP
-                            WHERE user_id = %s AND character_name = %s AND story_id = %s
+                                SET current_step = %s, completed = TRUE, completed_at = CURRENT_TIMESTAMP
+                                WHERE user_id = %s AND character_name = %s AND story_id = %s
                         ''', (step, user_id, character_name, story_id))
                     else:
                         cursor.execute('''
                             UPDATE story_progress
-                            SET current_step = %s
-                            WHERE user_id = %s AND character_name = %s AND story_id = %s
+                                SET current_step = %s
+                                WHERE user_id = %s AND character_name = %s AND story_id = %s
                         ''', (step, user_id, character_name, story_id))
                     conn.commit()
                     return True
@@ -1008,7 +1016,7 @@ class DatabaseManager:
                     cursor.execute('''
                         INSERT INTO story_choices 
                         (user_id, character_name, story_id, choice_index, choice_text)
-                        VALUES (%s, %s, %s, %s, %s)
+                            VALUES (%s, %s, %s, %s, %s)
                     ''', (user_id, character_name, story_id, choice_index, choice_text))
                     conn.commit()
                     return True
@@ -1024,7 +1032,7 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT story_id, completed_at
                         FROM story_progress
-                        WHERE user_id = %s AND character_name = %s AND completed = TRUE
+                            WHERE user_id = %s AND character_name = %s AND completed = TRUE
                         ORDER BY completed_at DESC
                     ''', (user_id, character_name))
                     return cursor.fetchall()
@@ -1055,7 +1063,7 @@ class DatabaseManager:
             with conn.cursor() as cursor:
                 cursor.execute(query, (user_id, character_name, chapter_id, scene_id))
                 result = cursor.fetchone()
-                return result[0] if result else 0
+        return result[0] if result else 0
 
     def get_completed_chapters(self, user_id: int, character_name: str) -> list:
         """사용자가 완료한 챕터 목록을 반환합니다."""
@@ -1065,7 +1073,7 @@ class DatabaseManager:
                     cursor.execute('''
                         SELECT chapter_id
                         FROM completed_chapters
-                        WHERE user_id = %s AND character_name = %s
+                            WHERE user_id = %s AND character_name = %s
                         ORDER BY chapter_id
                     ''', (user_id, character_name))
                     results = cursor.fetchall()
@@ -1080,9 +1088,10 @@ class DatabaseManager:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
-                        INSERT OR IGNORE INTO completed_chapters
+                        INSERT INTO completed_chapters
                         (user_id, character_name, chapter_id, completed_at)
-                        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id, character_name, chapter_id) DO NOTHING
                     ''', (user_id, character_name, chapter_id))
                     conn.commit()
                     return True
@@ -1105,7 +1114,7 @@ class DatabaseManager:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         cur.execute(
-            "INSERT OR IGNORE INTO user_milestone_claims (user_id, character_name, milestone, claimed_at) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO user_milestone_claims (user_id, character_name, milestone, claimed_at) VALUES (%s, %s, %s, %s) ON CONFLICT (user_id, character_name, milestone) DO NOTHING",
             (user_id, character_name, milestone, datetime.now())
         )
         conn.commit()
@@ -1115,7 +1124,7 @@ class DatabaseManager:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT MAX(milestone) FROM user_milestone_claims WHERE user_id=%s AND character_name=%s",
+                        "SELECT MAX(milestone) FROM user_milestone_claims WHERE user_id=%s AND character_name=%s",
                     (user_id, character_name)
                 )
                 result = cursor.fetchone()
@@ -1125,7 +1134,7 @@ class DatabaseManager:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT 1 FROM user_levelup_flags WHERE user_id=%s AND character_name=%s AND level=%s",
+                        "SELECT 1 FROM user_levelup_flags WHERE user_id=%s AND character_name=%s AND level=%s",
                     (user_id, character_name, level)
                 )
                 return cursor.fetchone() is not None
@@ -1133,10 +1142,11 @@ class DatabaseManager:
     def set_levelup_flag(self, user_id, character_name, level):
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(
-                    "INSERT OR IGNORE INTO user_levelup_flags (user_id, character_name, level) VALUES (%s, %s, %s)",
-                    (user_id, character_name, level)
-                )
+                cursor.execute('''
+                    INSERT INTO user_levelup_flags (user_id, character_name, level) 
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (user_id, character_name, level) DO NOTHING
+                ''', (user_id, character_name, level))
                 conn.commit()
 
     def set_affinity(self, user_id: int, character_name: str, value: int) -> bool:
@@ -1145,8 +1155,13 @@ class DatabaseManager:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
-                        INSERT OR REPLACE INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
-                        VALUES (%s, %s, %s, 0, CURRENT_DATE)
+                        INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
+                            VALUES (%s, %s, %s, 0, CURRENT_DATE)
+                        ON CONFLICT (user_id, character_name) 
+                        DO UPDATE SET 
+                            emotion_score = EXCLUDED.emotion_score,
+                            daily_message_count = EXCLUDED.daily_message_count,
+                            last_daily_reset = EXCLUDED.last_daily_reset
                     ''', (user_id, character_name, value))
                     conn.commit()
                     return True
@@ -1162,14 +1177,14 @@ class DatabaseManager:
                     # affinity 테이블의 daily_message_count 증가
                     cursor.execute('''
                         UPDATE affinity
-                        SET daily_message_count = COALESCE(daily_message_count, 0) + %s
-                        WHERE user_id = %s AND character_name = %s
+                            SET daily_message_count = COALESCE(daily_message_count, 0) + %s
+                            WHERE user_id = %s AND character_name = %s
                     ''', (count, user_id, character_name))
                     if cursor.rowcount == 0:
                         # affinity row가 없으면 새로 생성
                         cursor.execute('''
                             INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_daily_reset)
-                            VALUES (%s, %s, 0, %s, CURRENT_DATE)
+                                VALUES (%s, %s, 0, %s, CURRENT_DATE)
                         ''', (user_id, character_name, count))
                     conn.commit()
                     return True
@@ -1185,7 +1200,7 @@ class DatabaseManager:
                     # 정확히 일치하는 카드만 처리
                     cursor.execute('''
                         SELECT issued_number FROM card_issued
-                        WHERE character_name = %s AND card_id = %s
+                            WHERE character_name = %s AND card_id = %s
                     ''', (character_name, card_id))
                     result = cursor.fetchone()
                     if result:
@@ -1194,14 +1209,14 @@ class DatabaseManager:
                             print(f"Warning: Card number limit reached for {character_name} {card_id}")
                             return 10000
                         cursor.execute('''
-                            UPDATE card_issued SET issued_number = %s
-                            WHERE character_name = %s AND card_id = %s
+                                UPDATE card_issued SET issued_number = %s
+                                WHERE character_name = %s AND card_id = %s
                         ''', (new_number, character_name, card_id))
                     else:
                         new_number = 1
                         cursor.execute('''
                             INSERT INTO card_issued (character_name, card_id, issued_number)
-                            VALUES (%s, %s, %s)
+                                VALUES (%s, %s, %s)
                         ''', (character_name, card_id, new_number))
                     conn.commit()
                     return new_number
@@ -1216,7 +1231,7 @@ class DatabaseManager:
                 with conn.cursor() as cursor:
                     cursor.execute('''
                         SELECT issued_number FROM card_issued
-                        WHERE character_name = %s AND card_id = %s
+                            WHERE character_name = %s AND card_id = %s
                     ''', (character_name, card_id))
                     result = cursor.fetchone()
                     return result[0] if result else 0
@@ -1229,9 +1244,9 @@ class DatabaseManager:
             with conn.cursor() as cursor:
                 cursor.execute('''
                     INSERT INTO emotion_log (user_id, character_name, score, message)
-                    VALUES (%s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s)
                 ''', (user_id, character_name, score, message))
-                conn.commit()
+            conn.commit()
 
     def get_connection(self):
         return psycopg2.connect(DATABASE_URL) 

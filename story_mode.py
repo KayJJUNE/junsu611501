@@ -73,6 +73,7 @@ async def handle_eros_conversation(message: str, user_id: int, user_name: str, t
         "If you have any further questions after the hints have been given, please let us know! Guide the user's questions and answer them using the same responses."
         f"Call the user by their name ({user_name}) at the beginning or in the middle of your reply. "
         f"If the user calls you by your name, respond with a soft and emotional tone. "
+        ""
 
     )
 
@@ -91,23 +92,24 @@ async def handle_eros_conversation(message: str, user_id: int, user_name: str, t
         )
     # 3~9턴: 단서 자동 공개
     elif 3 <= turn <= 9:
-        hint_idx = session.get("hint_idx", 0)
-        if hint_idx < len(EROS_HINTS):
-            next_hint = EROS_HINTS[hint_idx]
-            session["hint_idx"] = hint_idx + 1
+        # 힌트 중복 방지 세션 관리
+        if "given_hints" not in session:
+            session["given_hints"] = set()
+
+        # 아직 말하지 않은 힌트만 선택
+        available_hints = [h for i, h in enumerate(EROS_HINTS) if i not in session["given_hints"]]
+        if available_hints:
+            next_hint = available_hints[0]
+            session["given_hints"].add(EROS_HINTS.index(next_hint))
+            # 프롬프트에 중복 금지, 자연스러운 대화 규칙 추가
             prompt = (
                 EROS_SCENARIO_INTRO +
                 f"User message: {message}\n"
                 f"Your job is to give the following clue as naturally as possible in your reply: {next_hint} "
-                "Do not repeat previous clues. Do not just say you are sad or need help. "
-                "Always reply in English, never in Korean. "
-                "The user is helping Eros solve the case. Only mention the situation ONCE at the beginning. Do NOT repeat the same background in every reply. Focus on new clues and the user's questions."
-                "At the end of each reply, or in the middle, include a short emotion or action in parentheses, like (sniffles), (teary eyes), (smiling), (wipes a tear), etc. "
-                "Do not use more than one set of parentheses per reply. "
-                "When having a conversation, instead of responding with 'Thank you for finding a gift for me,' respond with something that leads to further conversation. "
-                "If the user asks about the gift, respond with something that leads to further conversation. "
-                "When the user responds, provide a response that is naturally related to the scenario based on the user's response. "
-                "Answer questions about the incident until the response turn reaches 19, and guide the conversation so that the answers flow naturally."
+                "Do not repeat previous clues or information. "
+                "If the user asks about something else, answer naturally based on the context. "
+                "If all clues are given, encourage the user to guess the culprit or ask new questions. "
+                "Always keep the conversation natural and avoid repeating yourself."
             )
             return await call_openai(prompt)
         else:

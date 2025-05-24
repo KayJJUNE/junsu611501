@@ -169,10 +169,16 @@ def show_dashboard_stats():
 
 def get_full_character_ranking(character_name):
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query(f'''
-        SELECT a.user_id, a.emotion_score, COALESCE(cc.message_count, 0) as message_count
+    df = pd.read_sql_query('''
+        SELECT a.user_id, a.emotion_score, 
+               COALESCE(m.message_count, 0) as message_count
         FROM affinity a
-        LEFT JOIN conversation_count cc ON a.user_id = cc.user_id AND a.character_name = cc.character_name
+        LEFT JOIN (
+            SELECT user_id, character_name, COUNT(*) as message_count
+            FROM conversations
+            WHERE message_role = 'user'
+            GROUP BY user_id, character_name
+        ) m ON a.user_id = m.user_id AND a.character_name = m.character_name
         WHERE a.character_name = ?
         ORDER BY a.emotion_score DESC, message_count DESC
     ''', conn, params=(character_name,))
@@ -294,16 +300,13 @@ def get_all_story_progress():
     return story_stats
 
 def get_emotion_score_history(user_id, character_name=None):
-    """사용자의 감정 스코어 기록을 가져옵니다."""
     conn = sqlite3.connect(DB_PATH)
     query = """
         SELECT 
-            c.message_content,
-            e.score_change,
-            e.total_score,
+            e.message,
+            e.score,
             e.timestamp
         FROM emotion_log e
-        LEFT JOIN conversations c ON e.message_id = c.id
         WHERE e.user_id = ?
     """
     params = [user_id]
@@ -319,14 +322,13 @@ def get_emotion_score_history(user_id, character_name=None):
     return df
 
 def get_emotion_score_summary(user_id):
-    """사용자의 캐릭터별 감정 스코어 요약을 가져옵니다."""
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query("""
         SELECT 
             character_name,
-            MAX(total_score) as current_score,
+            MAX(score) as current_score,
             COUNT(*) as total_interactions,
-            AVG(score_change) as avg_score_change,
+            AVG(score) as avg_score,
             MAX(timestamp) as last_interaction
         FROM emotion_log
         WHERE user_id = ?

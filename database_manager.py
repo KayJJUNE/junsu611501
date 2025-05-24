@@ -322,10 +322,16 @@ class DatabaseManager:
                 current_score = result[0] if result else 0
                 daily_count = result[1] if result else 0
                 cursor.execute('''
-                    INSERT OR REPLACE INTO affinity 
+                    INSERT INTO affinity 
                     (user_id, character_name, emotion_score, daily_message_count, 
                     last_message_content, last_message_time)
                         VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, character_name) 
+                    DO UPDATE SET 
+                        emotion_score = EXCLUDED.emotion_score,
+                        daily_message_count = EXCLUDED.daily_message_count,
+                        last_message_content = EXCLUDED.last_message_content,
+                        last_message_time = EXCLUDED.last_message_time
                 ''', (user_id, character_name, current_score + score_change, 
                       daily_count + 1, last_message, last_message_time))
             conn.commit()
@@ -478,11 +484,29 @@ class DatabaseManager:
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
+                    # 먼저 UNIQUE 제약조건이 있는지 확인
+                    cursor.execute('''
+                        SELECT 1
+                        FROM information_schema.table_constraints
+                        WHERE table_name = 'user_cards'
+                        AND constraint_type = 'UNIQUE'
+                        AND constraint_name = 'user_cards_pkey'
+                    ''')
+                    
+                    if not cursor.fetchone():
+                        # UNIQUE 제약조건이 없으면 추가
+                        cursor.execute('''
+                            ALTER TABLE user_cards
+                            ADD CONSTRAINT user_cards_pkey 
+                            PRIMARY KEY (user_id, character_name, card_id)
+                        ''')
+                    
                     cursor.execute('''
                         INSERT INTO user_cards (user_id, character_name, card_id)
                         VALUES (%s, %s, %s)
                         ON CONFLICT (user_id, character_name, card_id) DO NOTHING
                     ''', (user_id, character_name, card_id))
+                    
                     issued_number = 0
                     if cursor.rowcount > 0:
                         issued_number = self.increment_card_issued_number(character_name, card_id)
@@ -1111,14 +1135,14 @@ class DatabaseManager:
         return result is not None
 
     def set_claimed_milestone(self, user_id, character_name, milestone):
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO user_milestone_claims (user_id, character_name, milestone, claimed_at) VALUES (%s, %s, %s, %s) ON CONFLICT (user_id, character_name, milestone) DO NOTHING",
-            (user_id, character_name, milestone, datetime.now())
-        )
-        conn.commit()
-        conn.close()
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    INSERT INTO user_milestone_claims (user_id, character_name, milestone, claimed_at) 
+                    VALUES (%s, %s, %s, %s) 
+                    ON CONFLICT (user_id, character_name, milestone) DO NOTHING
+                ''', (user_id, character_name, milestone, datetime.now()))
+                conn.commit()
 
     def get_last_claimed_milestone(self, user_id, character_name):
         with psycopg2.connect(DATABASE_URL) as conn:

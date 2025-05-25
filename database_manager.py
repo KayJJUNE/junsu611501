@@ -488,6 +488,7 @@ class DatabaseManager:
                         VALUES (%s, %s, %s)
                         ON CONFLICT (user_id, character_name, card_id) DO NOTHING
                     ''', (user_id, character_name, card_id))
+                    print(f"[DEBUG] add_user_card: user_id={user_id}, character_name={character_name}, card_id={card_id}, rowcount={cursor.rowcount}")
                     issued_number = 0
                     if cursor.rowcount > 0:
                         issued_number = self.increment_card_issued_number(character_name, card_id)

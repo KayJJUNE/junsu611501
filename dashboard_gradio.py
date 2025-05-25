@@ -1,17 +1,15 @@
 import gradio as gr
 import pandas as pd
-import sqlite3
-from datetime import datetime, timedelta
 import psycopg2
 import os
 import matplotlib.pyplot as plt
 import io
+from datetime import datetime, timedelta
 
-DB_PATH = "chatbot.db"
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 def get_user_cards():
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     df = pd.read_sql_query("""
         SELECT user_id, character_name, card_id, obtained_at
         FROM user_cards
@@ -21,7 +19,7 @@ def get_user_cards():
     return df
 
 def get_user_info():
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     df = pd.read_sql_query("""
         SELECT a.user_id, a.character_name, a.emotion_score, c.message_count
         FROM affinity a
@@ -35,13 +33,7 @@ def get_user_info():
     return df
 
 def get_user_summary(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    # 유저 기본 정보
-    total_msgs = pd.read_sql_query("""
-        SELECT COUNT(*) as total_messages
-        FROM conversations
-        WHERE user_id = ? AND message_role = 'user'
-    """, conn, params=(user_id,))
+    conn = psycopg2.connect(DATABASE_URL)
     user_info = pd.read_sql_query(f"""
         SELECT
             {user_id} as user_id,
@@ -53,53 +45,45 @@ def get_user_summary(user_id):
         FROM conversations
         WHERE user_id = %s
     """, conn, params=(user_id, user_id, user_id))
-    # 친밀도 등급
     affinity = pd.read_sql_query("""
         SELECT character_name, emotion_score
         FROM affinity
-        WHERE user_id = ?
+        WHERE user_id = %s
     """, conn, params=(user_id,))
-    # 카드 정보
     cards = pd.read_sql_query("""
         SELECT card_id, character_name, obtained_at
         FROM user_cards
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY obtained_at DESC
     """, conn, params=(user_id,))
-    # 카드 등급 비율
     card_tiers = pd.read_sql_query("""
         SELECT
-            SUBSTR(card_id, 1, 1) as tier,
+            SUBSTRING(card_id, 1, 1) as tier,
             COUNT(*) as count
         FROM user_cards
-        WHERE user_id = ?
+        WHERE user_id = %s
         GROUP BY tier
     """, conn, params=(user_id,))
-    # 캐릭터별 카드 분류
     char_cards = pd.read_sql_query("""
         SELECT character_name, COUNT(*) as count
         FROM user_cards
-        WHERE user_id = ?
+        WHERE user_id = %s
         GROUP BY character_name
     """, conn, params=(user_id,))
-    # 최근 획득 카드
     recent_card = cards.head(1)
-    # 주간 활동량
     week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
     week_msgs = pd.read_sql_query("""
         SELECT COUNT(*) as week_messages
         FROM conversations
-        WHERE user_id = ? AND timestamp >= ? AND message_role = 'user'
+        WHERE user_id = %s AND timestamp >= %s AND message_role = 'user'
     """, conn, params=(user_id, week_ago))
     week_cards = pd.read_sql_query("""
         SELECT COUNT(*) as week_cards
         FROM user_cards
-        WHERE user_id = ? AND obtained_at >= ?
+        WHERE user_id = %s AND obtained_at >= %s
     """, conn, params=(user_id, week_ago))
-    # 스토리 진행 현황
     story_progress = get_user_story_progress(user_id)
     conn.close()
-    # 결과 딕셔너리로 반환
     return {
         "기본 정보": user_info,
         "친밀도": affinity,
@@ -129,16 +113,13 @@ def user_dashboard(user_id):
     )
 
 def get_dashboard_stats():
-    conn = sqlite3.connect(DB_PATH)
-    # 1. 총 유저 메시지 수
+    conn = psycopg2.connect(DATABASE_URL)
     total_user_messages = pd.read_sql_query(
         "SELECT COUNT(*) as total_user_messages FROM conversations WHERE LOWER(message_role)='user';", conn
     )["total_user_messages"][0]
-    # 2. 챗봇 총 친밀도 점수
     total_affinity = pd.read_sql_query(
         "SELECT SUM(emotion_score) as total_affinity FROM affinity;", conn
     )["total_affinity"][0]
-    # 3. OpenAI 토큰 소비량
     try:
         total_tokens = pd.read_sql_query(
             "SELECT SUM(token_count) as total_tokens FROM conversations WHERE message_role='assistant';", conn
@@ -147,13 +128,11 @@ def get_dashboard_stats():
             total_tokens = 0
     except Exception:
         total_tokens = 0
-    # 4. 카드 등급별 출하량 및 백분율
     card_tiers = pd.read_sql_query(
-        "SELECT SUBSTR(card_id, 1, 1) as tier, COUNT(*) as count FROM user_cards GROUP BY tier;", conn
+        "SELECT SUBSTRING(card_id, 1, 1) as tier, COUNT(*) as count FROM user_cards GROUP BY tier;", conn
     )
     total_cards = card_tiers["count"].sum()
     card_tiers["percent"] = (card_tiers["count"] / total_cards * 100).round(2).astype(str) + "%"
-    # 레벨 통계 추가
     level_stats = get_level_statistics()
     conn.close()
     return {
@@ -166,7 +145,6 @@ def get_dashboard_stats():
 
 def show_dashboard_stats():
     stats = get_dashboard_stats()
-    # 표/카드 형태로 반환
     return (
         f"총 유저 메시지 수: {stats['총 유저 메시지 수']}",
         f"총 친밀도 점수: {stats['총 친밀도 점수']}",
@@ -176,7 +154,7 @@ def show_dashboard_stats():
     )
 
 def get_full_character_ranking(character_name):
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     df = pd.read_sql_query('''
         SELECT a.user_id, a.emotion_score, 
                COALESCE(m.message_count, 0) as message_count
@@ -187,14 +165,14 @@ def get_full_character_ranking(character_name):
             WHERE message_role = 'user'
             GROUP BY user_id, character_name
         ) m ON a.user_id = m.user_id AND a.character_name = m.character_name
-        WHERE a.character_name = ?
+        WHERE a.character_name = %s
         ORDER BY a.emotion_score DESC, message_count DESC
     ''', conn, params=(character_name,))
     conn.close()
     return df
 
 def get_full_total_ranking():
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     df = pd.read_sql_query('''
         SELECT a.user_id, COALESCE(a.total_affinity, 0) as total_affinity, COALESCE(m.total_messages, 0) as total_messages
         FROM (
@@ -234,14 +212,11 @@ def show_all_rankings():
     return kagari, eros, elysia, total
 
 def get_level_statistics():
-    conn = sqlite3.connect(DB_PATH)
-    # 전체 유저 수 계산
+    conn = psycopg2.connect(DATABASE_URL)
     total_users = pd.read_sql_query("""
         SELECT COUNT(DISTINCT user_id) as total_users
         FROM affinity
     """, conn)["total_users"][0]
-
-    # 레벨별 유저 수 계산
     level_stats = pd.read_sql_query("""
         WITH user_levels AS (
             SELECT 
@@ -258,7 +233,7 @@ def get_level_statistics():
         SELECT 
             level,
             COUNT(*) as user_count,
-            ROUND(COUNT(*) * 100.0 / ?, 2) as percentage
+            ROUND(COUNT(*) * 100.0 / %s, 2) as percentage
         FROM user_levels
         GROUP BY level
         ORDER BY 
@@ -273,8 +248,7 @@ def get_level_statistics():
     return level_stats
 
 def get_user_story_progress(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    # 스토리 챕터 진행 현황
+    conn = psycopg2.connect(DATABASE_URL)
     chapter_progress = pd.read_sql_query("""
         SELECT 
             character_name,
@@ -283,15 +257,14 @@ def get_user_story_progress(user_id):
             selected_choice,
             ending_type
         FROM story_progress
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY character_name, chapter_number
     """, conn, params=(user_id,))
     conn.close()
     return chapter_progress
 
 def get_all_story_progress():
-    conn = sqlite3.connect(DB_PATH)
-    # 전체 스토리 진행 현황
+    conn = psycopg2.connect(DATABASE_URL)
     story_stats = pd.read_sql_query("""
         SELECT 
             character_name,
@@ -308,29 +281,26 @@ def get_all_story_progress():
     return story_stats
 
 def get_emotion_score_history(user_id, character_name=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     query = """
         SELECT 
-            e.message,
-            e.score,
-            e.timestamp
-        FROM emotion_log e
-        WHERE e.user_id = ?
+            message,
+            score,
+            timestamp
+        FROM emotion_log
+        WHERE user_id = %s
     """
     params = [user_id]
-
-    if character_name:
-        query += " AND e.character_name = ?"
+    if character_name and character_name != "전체":
+        query += " AND character_name = %s"
         params.append(character_name)
-
-    query += " ORDER BY e.timestamp DESC"
-
+    query += " ORDER BY timestamp DESC"
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
 
 def get_emotion_score_summary(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     df = pd.read_sql_query("""
         SELECT 
             character_name,
@@ -339,7 +309,7 @@ def get_emotion_score_summary(user_id):
             AVG(score) as avg_score,
             MAX(timestamp) as last_interaction
         FROM emotion_log
-        WHERE user_id = ?
+        WHERE user_id = %s
         GROUP BY character_name
     """, conn, params=(user_id,))
     conn.close()

@@ -4,6 +4,8 @@ import sqlite3
 from datetime import datetime, timedelta
 import psycopg2
 import os
+import matplotlib.pyplot as plt
+import io
 
 DB_PATH = "chatbot.db"
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -42,12 +44,15 @@ def get_user_summary(user_id):
     """, conn, params=(user_id,))
     user_info = pd.read_sql_query(f"""
         SELECT
-            '{user_id}' as user_id,
+            {user_id} as user_id,
             MIN(timestamp) as joined_at,
+            MAX(timestamp) as last_message_time,
+            (SELECT content FROM conversations WHERE user_id = %s ORDER BY timestamp ASC LIMIT 1) as first_message_content,
+            (SELECT content FROM conversations WHERE user_id = %s ORDER BY timestamp DESC LIMIT 1) as last_message_content,
             SUM(CASE WHEN message_role='user' THEN 1 ELSE 0 END) as total_messages
         FROM conversations
-        WHERE user_id = ?
-    """, conn, params=(user_id,))
+        WHERE user_id = %s
+    """, conn, params=(user_id, user_id, user_id))
     # 친밀도 등급
     affinity = pd.read_sql_query("""
         SELECT character_name, emotion_score
@@ -354,6 +359,67 @@ def dashboard(user_id):
     df = get_user_cards(user_id)
     return df
 
+def get_user_card_stats(user_id):
+    conn = psycopg2.connect(DATABASE_URL)
+    # 총합
+    total = pd.read_sql_query(
+        "SELECT COUNT(*) AS total_cards FROM user_cards WHERE user_id = %s", conn, params=(user_id,))
+    # 티어별
+    tiers = pd.read_sql_query(
+        "SELECT SUBSTRING(card_id, 1, 1) AS tier, COUNT(*) AS count FROM user_cards WHERE user_id = %s GROUP BY tier", conn, params=(user_id,))
+    # 넘버링
+    numbering = pd.read_sql_query(
+        "SELECT card_id, character_name, obtained_at, ROW_NUMBER() OVER (ORDER BY obtained_at ASC) AS obtain_number FROM user_cards WHERE user_id = %s ORDER BY obtained_at ASC", conn, params=(user_id,))
+    conn.close()
+    return total, tiers, numbering
+
+def get_total_card_stats():
+    conn = psycopg2.connect(DATABASE_URL)
+    stats = pd.read_sql_query(
+        "SELECT SUBSTRING(card_id, 1, 1) AS tier, COUNT(*) AS count, ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM user_cards), 2) AS percent FROM user_cards GROUP BY tier ORDER BY tier", conn)
+    conn.close()
+    return stats
+
+def get_user_levelup_history(user_id):
+    conn = psycopg2.connect(DATABASE_URL)
+    df = pd.read_sql_query(
+        "SELECT level, flagged_at FROM user_levelup_flags WHERE user_id = %s ORDER BY flagged_at ASC",
+        conn, params=(user_id,))
+    conn.close()
+    return df
+
+def get_emotion_score_plot(user_id, character_name=None):
+    conn = psycopg2.connect(DATABASE_URL)
+    query = "SELECT timestamp, score FROM emotion_log WHERE user_id = %s"
+    params = [user_id]
+    if character_name:
+        query += " AND character_name = %s"
+        params.append(character_name)
+    query += " ORDER BY timestamp ASC"
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    if df.empty:
+        return None
+    plt.figure(figsize=(6,3))
+    plt.plot(df['timestamp'], df['score'], marker='o')
+    plt.title('감정 스코어 변화 추이')
+    plt.xlabel('시간')
+    plt.ylabel('스코어')
+    plt.tight_layout()
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close()
+    buf.seek(0)
+    return buf
+
+def get_top10_card_users():
+    conn = psycopg2.connect(DATABASE_URL)
+    df = pd.read_sql_query(
+        "SELECT user_id, COUNT(*) as card_count FROM user_cards GROUP BY user_id ORDER BY card_count DESC LIMIT 10",
+        conn)
+    conn.close()
+    return df
+
 if __name__ == "__main__":
     with gr.Blocks(title="디스코드 챗봇 통합 대시보드") as demo:
         gr.Markdown("# 디스코드 챗봇 통합 대시보드")
@@ -423,5 +489,35 @@ if __name__ == "__main__":
             story_btn = gr.Button("스토리 진행 현황 새로고침")
             story_out = gr.Dataframe(label="캐릭터별 챕터 진행 현황")
             story_btn.click(get_all_story_progress, inputs=None, outputs=[story_out])
+
+        with gr.Tab("카드 통계"):
+            gr.Markdown("## 유저별 카드 통계 및 전체 카드 배출 현황")
+            card_user_id = gr.Textbox(label="유저 ID", value="")
+            card_btn = gr.Button("유저 카드 통계 조회")
+            card_total = gr.Dataframe(label="총 카드 수")
+            card_tiers = gr.Dataframe(label="티어별 카드 수")
+            card_numbering = gr.Dataframe(label="획득 순서별 카드")
+            card_btn.click(get_user_card_stats, inputs=card_user_id, outputs=[card_total, card_tiers, card_numbering])
+
+            total_btn = gr.Button("전체 카드 배출 현황")
+            total_stats = gr.Dataframe(label="전체 티어별 배출 및 퍼센트")
+            total_btn.click(get_total_card_stats, inputs=None, outputs=total_stats)
+
+        with gr.Tab("레벨업/랭킹/그래프"):
+            gr.Markdown("## 유저별 레벨업 이력, 감정 스코어 변화, 카드 TOP10")
+            lvl_user_id = gr.Textbox(label="유저 ID", value="")
+            lvl_btn = gr.Button("레벨업 이력 조회")
+            lvl_out = gr.Dataframe(label="레벨업 이력")
+            lvl_btn.click(get_user_levelup_history, inputs=lvl_user_id, outputs=lvl_out)
+
+            emo_user_id = gr.Textbox(label="유저 ID(그래프)", value="")
+            emo_char = gr.Textbox(label="캐릭터명(선택)", value="")
+            emo_btn = gr.Button("감정 스코어 변화 그래프")
+            emo_out = gr.Image(label="감정 스코어 변화 추이 그래프")
+            emo_btn.click(get_emotion_score_plot, inputs=[emo_user_id, emo_char], outputs=emo_out)
+
+            top10_btn = gr.Button("카드 수 TOP 10 유저")
+            top10_out = gr.Dataframe(label="카드 수 TOP 10 유저")
+            top10_btn.click(get_top10_card_users, inputs=None, outputs=top10_out)
 
     demo.launch(share=True)

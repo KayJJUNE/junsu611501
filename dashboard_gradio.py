@@ -2,8 +2,11 @@ import gradio as gr
 import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
+import psycopg2
+import os
 
 DB_PATH = "chatbot.db"
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 def get_user_cards():
     conn = sqlite3.connect(DB_PATH)
@@ -335,6 +338,20 @@ def get_emotion_score_summary(user_id):
         GROUP BY character_name
     """, conn, params=(user_id,))
     conn.close()
+    return df
+
+def get_user_cards(user_id):
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+    cursor.execute("SELECT card_id, character_name, obtained_at FROM user_cards WHERE user_id = %s", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    # DataFrame으로 변환 (Gradio에서 표로 보기 좋음)
+    df = pd.DataFrame(rows, columns=["card_id", "character_name", "obtained_at"])
+    return df
+
+def dashboard(user_id):
+    df = get_user_cards(user_id)
     return df
 
 if __name__ == "__main__":

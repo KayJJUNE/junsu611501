@@ -508,7 +508,7 @@ class DatabaseManager:
                 SET daily_message_count = 0, last_daily_reset = CURRENT_TIMESTAMP
                 WHERE user_id = %s 
                 AND character_name = %s
-                AND last_daily_reset < CURRENT_TIMESTAMP
+                AND last_daily_reset::date < CURRENT_DATE
             ''', (user_id, character_name))
 
             cursor.execute('''
@@ -550,17 +550,19 @@ class DatabaseManager:
 
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO affinity 
-                (user_id, character_name, emotion_score, daily_message_count, 
-                last_message_content, last_message_time)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (user_id, character_name) 
-                DO UPDATE SET 
-                    emotion_score = affinity.emotion_score + EXCLUDED.emotion_score,
-                    daily_message_count = affinity.daily_message_count + 1,
-                    last_message_content = EXCLUDED.last_message_content,
-                    last_message_time = EXCLUDED.last_message_time
-            ''', (user_id, character_name, score_change, 1, last_message, last_message_time))
+                UPDATE affinity
+                SET emotion_score = emotion_score + %s,
+                    daily_message_count = daily_message_count + 1,
+                    last_message_content = %s,
+                    last_message_time = %s
+                WHERE user_id = %s AND character_name = %s
+            ''', (score_change, last_message, last_message_time, user_id, character_name))
+
+            if cursor.rowcount == 0:
+                cursor.execute('''
+                    INSERT INTO affinity (user_id, character_name, emotion_score, daily_message_count, last_message_content, last_message_time)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', (user_id, character_name, score_change, 1, last_message, last_message_time))
             conn.commit()
         except Exception as e:
             print(f"친밀도 업데이트 오류: {e}")

@@ -390,6 +390,15 @@ def get_top10_card_users():
     conn.close()
     return df
 
+def log_emotion_score(user_id, character_name, score, message):
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO emotion_log (user_id, character_name, score, message)
+                VALUES (%s, %s, %s, %s)
+            ''', (user_id, character_name, score, message))
+        conn.commit()
+
 if __name__ == "__main__":
     with gr.Blocks(title="디스코드 챗봇 통합 대시보드") as demo:
         gr.Markdown("# 디스코드 챗봇 통합 대시보드")

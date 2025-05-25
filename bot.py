@@ -5,6 +5,7 @@ from typing import Optional, Dict
 import asyncio
 import random
 import psycopg2
+from datetime import datetime
 
 from bot_selector import LanguageSelectView
 from database_manager import DATABASE_URL, DatabaseManager

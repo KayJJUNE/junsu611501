@@ -2,7 +2,6 @@ from datetime import datetime, date
 import json
 import aiosqlite
 import discord
-import sqlite3
 import psycopg2
 import os
 
@@ -484,29 +483,11 @@ class DatabaseManager:
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
-                    # 먼저 UNIQUE 제약조건이 있는지 확인
-                    cursor.execute('''
-                        SELECT 1
-                        FROM information_schema.table_constraints
-                        WHERE table_name = 'user_cards'
-                        AND constraint_type = 'UNIQUE'
-                        AND constraint_name = 'user_cards_pkey'
-                    ''')
-                    
-                    if not cursor.fetchone():
-                        # UNIQUE 제약조건이 없으면 추가
-                        cursor.execute('''
-                            ALTER TABLE user_cards
-                            ADD CONSTRAINT user_cards_pkey 
-                            PRIMARY KEY (user_id, character_name, card_id)
-                        ''')
-                    
                     cursor.execute('''
                         INSERT INTO user_cards (user_id, character_name, card_id)
                         VALUES (%s, %s, %s)
                         ON CONFLICT (user_id, character_name, card_id) DO NOTHING
                     ''', (user_id, character_name, card_id))
-                    
                     issued_number = 0
                     if cursor.rowcount > 0:
                         issued_number = self.increment_card_issued_number(character_name, card_id)

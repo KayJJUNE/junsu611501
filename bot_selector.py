@@ -610,12 +610,16 @@ class BotSelector(commands.Bot):
 
                 # 권한 체크
                 can_delete = False
-                if interaction.user.guild_permissions.manage_channels or interaction.user.id == interaction.guild.owner_id:
-                    can_delete = True
-                else:
-                    channel_name_parts = channel.name.split('-')
-                    if len(channel_name_parts) > 1 and channel_name_parts[-1] == interaction.user.name.lower():
+                try:
+                    if interaction.user.guild_permissions.manage_channels or interaction.user.id == interaction.guild.owner_id:
                         can_delete = True
+                    else:
+                        channel_name_parts = channel.name.split('-')
+                        if len(channel_name_parts) > 1 and channel_name_parts[-1] == interaction.user.name.lower():
+                            can_delete = True
+                except Exception as e:
+                    print(f"Error checking permissions: {e}")
+                    can_delete = False
 
                 if not can_delete:
                     await interaction.response.send_message("You don't have permission to delete this channel.", ephemeral=True)
@@ -626,14 +630,21 @@ class BotSelector(commands.Bot):
                     if channel.id in bot.active_channels:
                         bot.remove_channel(channel.id)
 
-                # 반드시 먼저 응답을 보내고 채널 삭제
-                await interaction.response.send_message("Let's talk again next time.")
-                await channel.delete()
+                # 응답 전송 후 채널 삭제
+                try:
+                    await interaction.response.send_message("Let's talk again next time.", ephemeral=True)
+                    # 응답이 전송될 때까지 잠시 대기
+                    await asyncio.sleep(1)
+                    await channel.delete()
+                except Exception as e:
+                    print(f"Error during channel deletion: {e}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message("Failed to delete the channel. Please try again.", ephemeral=True)
 
             except Exception as e:
                 print(f"Error in /close command: {e}")
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("An error occurred while deleting the channel.", ephemeral=True)
+                    await interaction.response.send_message("An error occurred while processing the command.", ephemeral=True)
 
         @self.tree.command(
             name="settings",
@@ -1661,6 +1672,61 @@ class BotSelector(commands.Bot):
             else:
                 await interaction.response.send_message(f"{target.display_name}'s total message count ({current_count} times) exceeds {total}. (Decrease is not supported)", ephemeral=True)
 
+        @self.tree.command(
+            name="help",
+            description="How to use the chatbot, affinity, card, story, ranking, FAQ guide"
+        )
+        async def help_command(interaction: discord.Interaction):
+            help_topics = [
+                ("🤖 How to Use the Chatbot", "how_to_use"),
+                ("❤️ Affinity & Level System", "affinity"),
+                ("🎴 Card & Reward System", "card"),
+                ("🎭 Story Mode", "story"),
+                ("🏆 Ranking System", "ranking"),
+                ("❓ FAQ", "faq"),
+            ]
+            options = [
+                discord.SelectOption(label=title, value=key)
+                for title, key in help_topics
+            ]
+            class HelpSelect(discord.ui.Select):
+                def __init__(self):
+                    super().__init__(placeholder="Select a help topic", min_values=1, max_values=1, options=options)
+                async def callback(self, interaction2: discord.Interaction):
+                    topic = self.values[0]
+                    embed = discord.Embed(color=discord.Color.blurple())
+                    if topic == "how_to_use":
+                        embed.title = "🤖 How to Use the Chatbot"
+                        embed.add_field(name="How to Talk with Characters", value="- Use /bot to create a private chat channel with a character like Kagari or Eros.\n- Supports multilingual input (EN/JP/ZH), responses are always in English.\n- Characters react to your emotions, tone, and depth of conversation.\n🧠 Pro Tip: The more emotionally engaging your dialogue, the faster you grow your bond!", inline=False)
+                    elif topic == "affinity":
+                        embed.title = "❤️ Affinity & Level System"
+                        embed.add_field(name="Level Up with Conversations", value="- Rookie (1–10 msgs): Basic chat only.\n- Iron (11–30): Unlock C-rank cards & light emotion.\n- Silver (31–60): A/B/C cards & story mood options.\n- Gold (61+): S-tier chance & story unlock.\n- Gold+ (100+): Higher A-rank chance + special tone.\nCommand: /affinity to check your current level, progress, and daily message stats.", inline=False)
+                    elif topic == "card":
+                        embed.title = "🎴 Card & Reward System"
+                        embed.add_field(name="How to Earn & Collect Cards", value="You earn cards through:\n- 🗣️ Emotional chat: score-based triggers (10/20/30)\n- 🎮 Story Mode completions\n- ❤️ Affinity milestone bonuses\nCard Tier Example (Gold user):\n- A (20%) / B (40%) / C (40%)\n- Gold+ user: A (35%) / B (35%) / C (30%)\n📜 Use /mycard to view your collection.", inline=False)
+                    elif topic == "story":
+                        embed.title = "🎭 Story Mode"
+                        embed.add_field(name="Play Story Chapters with Your Favorite Characters", value="Start with /story start [character]\nStory Mode is only open to users with Gold status or higher. Story Mode allows you to earn Tier Cards.\n\nScenarios:\n- Kagari: 🌸 Spring date under the cherry blossoms\n- Eros: 🕵️ Track down the mysterious gift thief\n🎯 30+ dialogue turns → score-based endings (positive/neutral/negative)\n🃏 Ending gives you a card (based on performance)", inline=False)
+                    elif topic == "ranking":
+                        embed.title = "🏆 Ranking System"
+                        embed.add_field(name="Want to know who's building the strongest bond with each character?", value="Our Crush Rankings track the top players based on weekly interaction scores!\n\nHow it works:\n- Rankings are based on your weekly Crush Score from chats and stories\n- Updated every Monday 00:00 UTC (Sunday reset)\n- Rank = sum of crush points with that character\nCommands:\n- /ranking — View current top players", inline=False)
+                    elif topic == "faq":
+                        embed.title = "❓ FAQ"
+                        embed.add_field(name="Q1: How can I get Q cards or grade cards?", value="A: You can get A–C grade cards through 1:1 general chat with characters.\nHowever, your Crush level determines the probability and tier of the card you receive.\nCheck /help affinity & level system to see what tier unlocks which card grades.", inline=False)
+                        embed.add_field(name="Q2: How are rewards calculated in Story Mode?", value="A: There are two score systems in Story Mode:\n- Mission Clear Logic: Each story has a mission goal. If you clear it, you're guaranteed an S-tier card.\n- Affinity Score Logic: Your outcome is affected by how close you are with the character.\nIf your crush score is too low, you may not receive a card at all. Higher crush = higher card tier and more beautiful card art!", inline=False)
+                        embed.add_field(name="Q3: What changes based on my Crush with the character?", value="A: Character tone, reaction, and card chances all change based on your Affinity level.\n- Higher Affinity = More natural or intimate dialogue\n- Higher Affinity = Better chance at A-tier or S-tier cards\n- Lower Affinity = Dull responses, chance of being rejected\nUse /affinity to track your current level with each character.", inline=False)
+                    await interaction2.response.send_message(embed=embed, ephemeral=True)
+            class HelpView(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=180)
+                    self.add_item(HelpSelect())
+            embed = discord.Embed(
+                title="Help Menu",
+                description="Select a topic below to learn more!",
+                color=discord.Color.blurple()
+            )
+            await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
+
     async def setup_hook(self):
         print("봇 초기화 중...")
         try:
@@ -2342,6 +2408,8 @@ class ChoiceButton(discord.ui.Button):
                 await interaction.response.send_message("Only you can select.", ephemeral=True)
                 return
 
+            print(f"[DEBUG][ChoiceButton] Starting callback for user_id={self.user.id}, character={self.character_name}, chapter_id={self.chapter_id}, choice={self.value}")
+
             # 1. 선택 버튼 비활성화
             for item in self.view.children:
                 if isinstance(item, discord.ui.Button):
@@ -2363,11 +2431,13 @@ class ChoiceButton(discord.ui.Button):
 
             # 3. 카드 지급 (점수 기반)
             total_score = story_sessions[self.user.id]["score"]
+            print(f"[DEBUG][ChoiceButton] Current total_score={total_score}")
+
             card_id = get_story_card_reward(self.character_name, total_score)
+            print(f"[DEBUG][ChoiceButton] Retrieved card_id={card_id} for score {total_score}")
 
             if card_id:
-                print(f"[DEBUG][ChoiceButton] user_id={self.user.id}, character={self.character_name}, chapter_id={self.chapter_id}, choice={self.value}, card_id={card_id}")
-                print(f"[DEBUG][ChoiceButton] total_score={total_score}")
+                print(f"[DEBUG][ChoiceButton] Processing card reward: user_id={self.user.id}, character={self.character_name}, card_id={card_id}")
 
                 card_info = CHARACTER_CARD_INFO[self.character_name][card_id]
                 card_embed = discord.Embed(
@@ -2387,7 +2457,7 @@ class ChoiceButton(discord.ui.Button):
                         file = discord.File(image_path, filename=f"card_{card_id}.png")
                         card_embed.set_image(url=f"attachment://card_{card_id}.png")
                     else:
-                        print(f"[DEBUG] Card image not found: {image_path}")
+                        print(f"[DEBUG][ChoiceButton] Card image not found: {image_path}")
 
                 # CardClaimView 생성 및 메시지 전송
                 view = CardClaimView(self.user.id, card_id, self.character_name, self.db, is_story_mode=True)
@@ -2400,7 +2470,7 @@ class ChoiceButton(discord.ui.Button):
                 await self.channel.send("Story mode has ended, please enter /close to close the channel.")
 
         except Exception as e:
-            print(f"[ERROR] ChoiceButton callback: {e}")
+            print(f"[ERROR][ChoiceButton] Error in callback: {e}")
             import traceback
             print(traceback.format_exc())
             await interaction.response.send_message("An error occurred. Please contact the administrator.", ephemeral=True)

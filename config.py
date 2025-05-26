@@ -785,7 +785,7 @@ STORY_CHAPTERS = {
                         "Who do you think took the gift box? 🤔",
                         "A. Kagari",
                         "B. Elysia",
-                        "C. Ela",
+                        "C. Ira",
                         "D. Cang"
                     ]
                 }
@@ -802,7 +802,7 @@ STORY_CHAPTERS = {
                     "card": None
                 },
                 "C": {
-                    "title": "Era",
+                    "title": "Ira",
                     "description": "What? Don't bother me and go away, will you?",
                     "card": None
                 },
@@ -820,10 +820,10 @@ STORY_CARD_REWARD = [
     {"character": "Kagari", "min": 30, "max": 100, "card": "kagaris1"},
     {"character": "Kagari", "min": 18, "max": 29, "card": "kagaris2"},
     {"character": "Kagari", "min": 0, "max": 17, "card": None},
-    {"character": "Eros", "min": 25, "max": 30, "card": "erosa1"},
-    {"character": "Eros", "min": 18, "max": 24, "card": "erosb1"},
-    {"character": "Eros", "min": 0, "max": 17, "card": "erosc1"},
-    # 필요시 추가
+    {"character": "Eros", "min": 15, "max": 20, "card": "eross1"},
+    {"character": "Eros", "min": 11, "max": 14, "card": "eross3"},
+    {"character": "Eros", "min": 7, "max": 10, "card": "eross4"},
+    {"character": "Eros", "min": 0, "max": 6, "card": None},
 ]
 
 # 안내용 마일스톤(Embed용, 카드 지급 로직과 무관)

@@ -316,12 +316,8 @@ class FinalChoiceButtonEros(discord.ui.Button):
         # 카드 지급
         card_id = None
         if self.label_key == "D":
-            # 점수 구간에 따라 S카드(예: eross2 등) 지급
-            for reward in STORY_CARD_REWARD:
-                if reward["character"] == character_name and reward["min"] <= total <= reward["max"]:
-                    card_id = reward["card"]
-                    print(f"[DEBUG][FinalChoiceButtonEros] Found matching reward for choice D: min={reward['min']}, max={reward['max']}, card={card_id}")
-                    break
+            card_id = "eross2"  # D 선택 시 무조건 eross2 지급
+            print(f"[DEBUG][FinalChoiceButtonEros] D 선택 - 고정 카드 지급: {card_id}")
         else:
             for reward in STORY_CARD_REWARD:
                 if reward["character"] == character_name and reward["min"] <= total <= reward["max"]:

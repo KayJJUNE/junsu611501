@@ -817,12 +817,12 @@ STORY_CHAPTERS = {
 }
 # 스토리 엔딩별 카드 지급 정보 (중복 방지)
 STORY_CARD_REWARD = [
-    {"character": "Kagari", "min": 25, "max": 30, "card": "kagaris1"},
-    {"character": "Kagari", "min": 18, "max": 24, "card": "kagaris2"},
+    {"character": "Kagari", "min": 30, "max": 100, "card": "kagaris1"},
+    {"character": "Kagari", "min": 18, "max": 29, "card": "kagaris2"},
     {"character": "Kagari", "min": 0, "max": 17, "card": None},
-    {"character": "Eros", "min": 25, "max": 30, "card": "erosA1"},
-    {"character": "Eros", "min": 18, "max": 24, "card": "erosB1"},
-    {"character": "Eros", "min": 0, "max": 17, "card": "erosC1"},
+    {"character": "Eros", "min": 25, "max": 30, "card": "erosa1"},
+    {"character": "Eros", "min": 18, "max": 24, "card": "erosb1"},
+    {"character": "Eros", "min": 0, "max": 17, "card": "erosc1"},
     # 필요시 추가
 ]
 
@@ -884,15 +884,15 @@ TIER_CARD_COUNTS = {
 
 CHARACTER_CARD_INFO["Eros"] = {
     "erosA1": {
-        "image_path": "assets/erosA1.png",
+        "image_path": "assets/erosa1.png",
         "description": "Eros – Grateful Heart Card"
     },
     "erosB1": {
-        "image_path": "assets/erosB1.png",
+        "image_path": "assets/erosb1.png",
         "description": "Eros – Delivery Team Card"
     },
     "erosC1": {
-        "image_path": "assets/erosC1.png",
+        "image_path": "assets/erosc1.png",
         "description": "Eros – Secret Wish Card"
     }
 }

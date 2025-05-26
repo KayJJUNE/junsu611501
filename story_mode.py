@@ -172,30 +172,35 @@ async def classify_emotion(user_message, user_id=None, character_name=None):
 async def on_user_message(user_id, user_message, channel, character_name, user_name):
     # 1. 세션이 없으면 스토리 시작(INSERT)
     if user_id not in story_sessions:
-        chapter_number = 1  # (혹은 config에서 읽기)
-        start_story(user_id, character_name, chapter_number)
+        chapter_number = 1
+        # story_progress에 INSERT
+        db.start_story(user_id, character_name, chapter_number)
+        # story_unlocks에 INSERT
+        db.add_story_unlock(user_id, character_name, chapter_number)
         story_sessions[user_id] = {"score": 0, "turn": 1}
 
     session = story_sessions[user_id]
     turn = session["turn"]
 
-    # 캐릭터별 턴 제한 분기
-    if character_name == "Kagari" and turn >= 40:
-        await show_final_choice_embed_kagari(user_id, channel)
-        del story_sessions[user_id]
-        return
-    elif character_name == "Eros" and turn >= 20:
-        await show_final_choice_embed_eros(user_id, channel)
-        del story_sessions[user_id]
-        return
+    # 감정 점수 기록
+    score = await classify_emotion(user_message, user_id, character_name)
+    session["score"] += score
+    
+    # scene_scores에 기록
+    db.save_scene_score(user_id, character_name, 1, turn, score)
+
+    # story_progress 업데이트
+    db.update_story_progress(user_id, character_name, 1, turn, completed=False)
 
     # 대화 처리
     if character_name == "Eros":
         ai_reply = await handle_eros_conversation(user_message, user_id, user_name, turn)
     else:
         ai_reply = await handle_kagari_conversation(user_message, user_id, user_name)
+    
     if ai_reply:
         await channel.send(ai_reply)
+    
     session["turn"] += 1
 
     print(f"[감정누적] user_id: {user_id}, 누적점수: {session['score']}, turn: {session['turn']}")

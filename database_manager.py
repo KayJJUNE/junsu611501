@@ -987,12 +987,10 @@ class DatabaseManager:
                 with conn.cursor() as cursor:
                     cursor.execute('''
                         INSERT INTO story_progress 
-                        (user_id, character_name, chapter_number, current_step, completed)
-                            VALUES (%s, %s, %s, 0, FALSE)
+                        (user_id, character_name, chapter_number, completed_at, selected_choice, ending_type)
+                        VALUES (%s, %s, %s, NULL, NULL, NULL)
                         ON CONFLICT (user_id, character_name, chapter_number) 
-                        DO UPDATE SET 
-                            current_step = EXCLUDED.current_step,
-                            completed = EXCLUDED.completed
+                        DO NOTHING
                     ''', (user_id, character_name, chapter_number))
                     conn.commit()
                     return True

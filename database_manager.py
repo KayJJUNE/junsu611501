@@ -480,32 +480,20 @@ class DatabaseManager:
             return False
 
     def add_user_card(self, user_id: int, character_name: str, card_id: str):
-        """사용자에게 카드 추가 (card_id 기반) 및 전체 발급 순번 관리"""
+        print(f"[DEBUG] add_user_card called: user_id={user_id}, character_name={character_name}, card_id={card_id}")
         try:
-            with psycopg2.connect(DATABASE_URL) as conn:
+            with self.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    # 현재 호감도 조회
-                    cursor.execute('''
-                        SELECT emotion_score FROM affinity
-                        WHERE user_id = %s AND character_name = %s
-                    ''', (user_id, character_name))
-                    result = cursor.fetchone()
-                    emotion_score = result[0] if result else 0
-
-                    # 카드 지급 (호감도 함께 기록)
-                    cursor.execute('''
-                        INSERT INTO user_cards (user_id, character_name, card_id, emotion_score_at_obtain)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (user_id, character_name, card_id) DO NOTHING
-                    ''', (user_id, character_name, card_id, emotion_score))
-                    issued_number = 0
-                    if cursor.rowcount > 0:
-                        issued_number = self.increment_card_issued_number(character_name, card_id)
+                    cursor.execute(
+                        "INSERT INTO user_cards (user_id, character_name, card_id) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                        (user_id, character_name, card_id)
+                    )
+                    print(f"[DEBUG] cursor.rowcount: {cursor.rowcount}")
                     conn.commit()
-                    return (cursor.rowcount > 0, issued_number)
+                    return cursor.rowcount > 0
         except Exception as e:
-            print(f"Error adding user card: {e}")
-            return (False, 0)
+            print(f"[ERROR] add_user_card: {e}")
+            return False
 
     def get_user_character_messages(self, user_id: int, character_name: str, limit: int = 20):
         """사용자와 특정 캐릭터의 최근 대화 기록 조회"""

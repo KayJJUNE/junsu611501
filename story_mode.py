@@ -228,7 +228,7 @@ class FinalChoiceButtonKagari(discord.ui.Button):
         record_story_choice(self.user_id, "Kagari", "kagari_story", self.label, f"선택지 {self.label}")
 
         # --- 자동 기록: 스토리 진행 ---
-        record_story_progress(self.user_id, "Kagari", "kagari_story", step=20, completed=True)
+        record_story_progress(self.user_id, "Kagari", 1, step=40, completed=True)
 
         # (필요시) 챕터 해금, 장면 점수 기록도 여기에 추가
 
@@ -291,7 +291,7 @@ class FinalChoiceButtonEros(discord.ui.Button):
         record_story_choice(self.user_id, character_name, "eros_story", self.label_key, f"선택지 {self.label_key}")
 
         # --- 자동 기록: 스토리 진행 ---
-        record_story_progress(self.user_id, character_name, "eros_story", step=20, completed=True)
+        record_story_progress(self.user_id, character_name, 1, step=20, completed=True)
 
         # (필요시) 챕터 해금, 장면 점수 기록도 여기에 추가
 
@@ -333,12 +333,15 @@ class FinalChoiceButtonEros(discord.ui.Button):
 def record_story_choice(user_id, character_name, story_id, choice_index, choice_text):
     db.save_story_choice(user_id, character_name, story_id, choice_index, choice_text)
 
-def record_story_progress(user_id, character_name, story_id, step, completed=True):
-    db.update_story_progress(user_id, character_name, story_id, step, completed)
+def record_story_progress(user_id, character_name, chapter_number, step, completed=True):
+    # chapter_number는 반드시 int여야 함!
+    db.update_story_progress(user_id, character_name, chapter_number, step, completed=completed)
 
 def record_story_unlock(user_id, character_name, chapter_id):
+    # chapter_id는 반드시 int여야 함!
     db.add_story_unlock(user_id, character_name, chapter_id)
 
 def record_scene_score(user_id, character_name, chapter_id, scene_id, score):
+    # chapter_id, scene_id는 반드시 int여야 함!
     db.save_scene_score(user_id, character_name, chapter_id, scene_id, score)
 

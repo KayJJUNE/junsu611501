@@ -339,4 +339,5 @@ def record_story_unlock(user_id, character_name, chapter_id):
     db.add_story_unlock(user_id, character_name, chapter_id)
 
 def record_scene_score(user_id, character_name, chapter_id, scene_id, score):
-    db.save_scene_score(user_id, character_name, chapter_id, scene_id, score) 
+    db.save_scene_score(user_id, character_name, chapter_id, scene_id, score)
+

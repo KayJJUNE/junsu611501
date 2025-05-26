@@ -980,27 +980,27 @@ class DatabaseManager:
             print(f"Error in get_story_progress: {e}")
             return None
 
-    def start_story(self, user_id: int, character_name: str, story_id: str) -> bool:
+    def start_story(self, user_id: int, character_name: str, chapter_number: int) -> bool:
         """새로운 스토리 시작"""
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
                         INSERT INTO story_progress 
-                        (user_id, character_name, story_id, current_step, completed)
+                        (user_id, character_name, chapter_number, current_step, completed)
                             VALUES (%s, %s, %s, 0, FALSE)
                         ON CONFLICT (user_id, character_name, chapter_number) 
                         DO UPDATE SET 
                             current_step = EXCLUDED.current_step,
                             completed = EXCLUDED.completed
-                    ''', (user_id, character_name, story_id))
+                    ''', (user_id, character_name, chapter_number))
                     conn.commit()
                     return True
         except Exception as e:
             print(f"Error in start_story: {e}")
             return False
 
-    def update_story_progress(self, user_id: int, character_name: str, story_id: str, step: int, completed: bool = False) -> bool:
+    def update_story_progress(self, user_id: int, character_name: str, chapter_number: int, step: int, selected_choice: str = None, ending_type: str = None, completed: bool = False) -> bool:
         """스토리 진행 상태 업데이트"""
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
@@ -1008,15 +1008,16 @@ class DatabaseManager:
                     if completed:
                         cursor.execute('''
                             UPDATE story_progress
-                                SET current_step = %s, completed = TRUE, completed_at = CURRENT_TIMESTAMP
-                                WHERE user_id = %s AND character_name = %s AND story_id = %s
-                        ''', (step, user_id, character_name, story_id))
+                                SET current_step = %s, completed = TRUE, completed_at = CURRENT_TIMESTAMP,
+                                    selected_choice = %s, ending_type = %s
+                                WHERE user_id = %s AND character_name = %s AND chapter_number = %s
+                        ''', (step, selected_choice, ending_type, user_id, character_name, chapter_number))
                     else:
                         cursor.execute('''
                             UPDATE story_progress
                                 SET current_step = %s
-                                WHERE user_id = %s AND character_name = %s AND story_id = %s
-                        ''', (step, user_id, character_name, story_id))
+                                WHERE user_id = %s AND character_name = %s AND chapter_number = %s
+                        ''', (step, user_id, character_name, chapter_number))
                     conn.commit()
                     return True
         except Exception as e:

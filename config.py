@@ -622,7 +622,7 @@ STORY_CHAPTERS = {
             "title": "First Meeting (Cherry Blossom Date)",
             "description": "The first meeting between the user and Kagari, filled with innocence, nervousness, and girlish emotions",
             "affinity_required": "Gold",
-            "turns_required": 10,
+            "turns_required": 40,
             "chapter_embed": {
                 "title": "🌸 Chapter 1: First Meeting",
                 "thumbnail": "https://i.postimg.cc/d38pC4d4/0ddacdb6aca795dfbbfc0e26d00eaa2c.gif",

@@ -152,8 +152,8 @@ async def process_story_mode(message: str, user_id: int, user_name: str, charact
     else:
         return "story mode is not ready for this character."
 
-def start_story(user_id):
-    story_sessions[user_id] = {"score": 0, "turn": 1}
+def start_story(user_id, character_name, chapter_number):
+    db.start_story(user_id, character_name, chapter_number)
 
 async def classify_emotion(user_message, user_id=None, character_name=None):
     prompt = (
@@ -170,10 +170,16 @@ async def classify_emotion(user_message, user_id=None, character_name=None):
     return score
 
 async def on_user_message(user_id, user_message, channel, character_name, user_name):
+    # 1. 세션이 없으면 스토리 시작(INSERT)
+    if user_id not in story_sessions:
+        chapter_number = 1  # (혹은 config에서 읽기)
+        start_story(user_id, character_name, chapter_number)
+        story_sessions[user_id] = {"score": 0, "turn": 1}
+
     session = story_sessions[user_id]
     turn = session["turn"]
 
-    # 캐릭터별로 턴 제한 다르게!
+    # 캐릭터별 턴 제한 분기
     if character_name == "Kagari" and turn >= 40:
         await show_final_choice_embed_kagari(user_id, channel)
         del story_sessions[user_id]
@@ -183,7 +189,7 @@ async def on_user_message(user_id, user_message, channel, character_name, user_n
         del story_sessions[user_id]
         return
 
-    # 그 외: 기존 대화 로직
+    # 대화 처리
     if character_name == "Eros":
         ai_reply = await handle_eros_conversation(user_message, user_id, user_name, turn)
     else:
@@ -344,4 +350,14 @@ def record_story_unlock(user_id, character_name, chapter_id):
 def record_scene_score(user_id, character_name, chapter_id, scene_id, score):
     # chapter_id, scene_id는 반드시 int여야 함!
     db.save_scene_score(user_id, character_name, chapter_id, scene_id, score)
+
+# 예시: 스토리 모드 진입 명령어 처리 함수
+async def on_story_mode_start(user_id, character_name):
+    chapter_number = 1  # (혹은 config에서 읽어올 수도 있음)
+    # 1. story_progress에 row INSERT
+    start_story(user_id, character_name, chapter_number)
+    # 2. 세션 생성
+    story_sessions[user_id] = {"score": 0, "turn": 1}
+    # 3. 첫 대화 안내 등
+    # await channel.send("스토리 모드가 시작되었습니다! ...")
 

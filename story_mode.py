@@ -173,13 +173,14 @@ async def on_user_message(user_id, user_message, channel, character_name, user_n
     session = story_sessions[user_id]
     turn = session["turn"]
 
-    # 20턴(엔딩): Eros/Kagari 분기별로 임베드+버튼만 출력
-    if turn >= 20:
-        if character_name == "Kagari":
-            await show_final_choice_embed_kagari(user_id, channel)
-        elif character_name == "Eros":
-            await show_final_choice_embed_eros(user_id, channel)
-        session["turn"] += 1
+    # 캐릭터별로 턴 제한 다르게!
+    if character_name == "Kagari" and turn >= 40:
+        await show_final_choice_embed_kagari(user_id, channel)
+        del story_sessions[user_id]
+        return
+    elif character_name == "Eros" and turn >= 20:
+        await show_final_choice_embed_eros(user_id, channel)
+        del story_sessions[user_id]
         return
 
     # 그 외: 기존 대화 로직
@@ -187,7 +188,7 @@ async def on_user_message(user_id, user_message, channel, character_name, user_n
         ai_reply = await handle_eros_conversation(user_message, user_id, user_name, turn)
     else:
         ai_reply = await handle_kagari_conversation(user_message, user_id, user_name)
-    if ai_reply:  # None이 아닌 경우에만 메시지 전송
+    if ai_reply:
         await channel.send(ai_reply)
     session["turn"] += 1
 

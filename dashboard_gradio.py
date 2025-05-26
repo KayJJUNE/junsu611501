@@ -36,11 +36,11 @@ def get_user_summary(user_id):
     total_msgs = pd.read_sql_query("""
         SELECT COUNT(*) as total_messages
         FROM conversations
-        WHERE user_id = ? AND message_role = 'user'
+        WHERE user_id = %s AND message_role = 'user'
     """, conn, params=(user_id,))
-    user_info = pd.read_sql_query(f"""
+    user_info = pd.read_sql_query("""
         SELECT
-            {user_id} as user_id,
+            %s as user_id,
             MIN(timestamp) as joined_at,
             MAX(timestamp) as last_message_time,
             (SELECT content FROM conversations WHERE user_id = %s ORDER BY timestamp ASC LIMIT 1) as first_message_content,
@@ -48,34 +48,34 @@ def get_user_summary(user_id):
             SUM(CASE WHEN message_role='user' THEN 1 ELSE 0 END) as total_messages
         FROM conversations
         WHERE user_id = %s
-    """, conn, params=(user_id, user_id, user_id))
+    """, conn, params=(user_id, user_id, user_id, user_id))
     # 친밀도 등급
     affinity = pd.read_sql_query("""
         SELECT character_name, emotion_score
         FROM affinity
-        WHERE user_id = ?
+        WHERE user_id = %s
     """, conn, params=(user_id,))
     # 카드 정보
     cards = pd.read_sql_query("""
         SELECT card_id, character_name, obtained_at
         FROM user_cards
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY obtained_at DESC
     """, conn, params=(user_id,))
     # 카드 등급 비율
     card_tiers = pd.read_sql_query("""
         SELECT
-            SUBSTR(card_id, 1, 1) as tier,
+            SUBSTRING(card_id, 1, 1) as tier,
             COUNT(*) as count
         FROM user_cards
-        WHERE user_id = ?
+        WHERE user_id = %s
         GROUP BY tier
     """, conn, params=(user_id,))
     # 캐릭터별 카드 분류
     char_cards = pd.read_sql_query("""
         SELECT character_name, COUNT(*) as count
         FROM user_cards
-        WHERE user_id = ?
+        WHERE user_id = %s
         GROUP BY character_name
     """, conn, params=(user_id,))
     # 최근 획득 카드
@@ -85,12 +85,12 @@ def get_user_summary(user_id):
     week_msgs = pd.read_sql_query("""
         SELECT COUNT(*) as week_messages
         FROM conversations
-        WHERE user_id = ? AND timestamp >= ? AND message_role = 'user'
+        WHERE user_id = %s AND timestamp >= %s AND message_role = 'user'
     """, conn, params=(user_id, week_ago))
     week_cards = pd.read_sql_query("""
         SELECT COUNT(*) as week_cards
         FROM user_cards
-        WHERE user_id = ? AND obtained_at >= ?
+        WHERE user_id = %s AND obtained_at >= %s
     """, conn, params=(user_id, week_ago))
     # 스토리 진행 현황
     story_progress = get_user_story_progress(user_id)

@@ -29,6 +29,8 @@ class CharacterBot(commands.Bot):
             "elysia": os.path.join("assets", "elysia.png")
         }
         
+        self.db = DatabaseManager()  # 인스턴스 준비
+        
     async def setup_hook(self):
         """Initial setup after the bot is ready"""
         await self.tree.sync()
@@ -173,3 +175,28 @@ class CharacterBot(commands.Bot):
                 "오류가 발생했습니다. 다시 시도해주세요.",
                 ephemeral=True
             ) 
+
+    async def on_message(self, message):
+        if message.author.bot:
+            return
+
+        user_id = message.author.id
+        channel_id = message.channel.id
+        character_name = "kagari"  # 실제 캐릭터명 추출 로직 필요
+        language = "ko"  # 실제 언어 추출 로직 필요
+
+        # 1. 대화(conversations) 기록
+        self.db.add_message(channel_id, user_id, character_name, "user", message.content, language)
+
+        # 2. 감정 분석 (예시)
+        score_change = 1  # 실제 감정 분석 함수로 대체
+        await self.db.update_affinity(user_id, character_name, message.content, str(datetime.now()), score_change)
+
+        # 3. 감정 로그 기록
+        self.db.log_emotion_score(user_id, character_name, score_change, message.content)
+
+        # 4. 대화 카운트/마일스톤 업데이트 (선택)
+        milestone = 10  # 예시, 실제 마일스톤 로직 필요
+        await self.db.update_last_milestone(user_id, milestone)
+
+        # ... 나머지 응답 처리 ... 

@@ -2,9 +2,11 @@ import gradio as gr
 import pandas as pd
 from datetime import datetime, timedelta
 import psycopg2
+from sqlalchemy import create_engine
 import os
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+engine = create_engine(DATABASE_URL)
 
 def get_user_cards():
     conn = psycopg2.connect(DATABASE_URL)

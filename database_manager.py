@@ -70,6 +70,7 @@ class DatabaseManager:
                         character_name TEXT,
                         card_id TEXT,
                         obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        emotion_score_at_obtain INTEGER,
                         PRIMARY KEY (user_id, character_name, card_id)
                     )
                 ''')
@@ -483,12 +484,20 @@ class DatabaseManager:
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
+                    # 현재 호감도 조회
                     cursor.execute('''
-                        INSERT INTO user_cards (user_id, character_name, card_id)
-                        VALUES (%s, %s, %s)
+                        SELECT emotion_score FROM affinity
+                        WHERE user_id = %s AND character_name = %s
+                    ''', (user_id, character_name))
+                    result = cursor.fetchone()
+                    emotion_score = result[0] if result else 0
+
+                    # 카드 지급 (호감도 함께 기록)
+                    cursor.execute('''
+                        INSERT INTO user_cards (user_id, character_name, card_id, emotion_score_at_obtain)
+                        VALUES (%s, %s, %s, %s)
                         ON CONFLICT (user_id, character_name, card_id) DO NOTHING
-                    ''', (user_id, character_name, card_id))
-                    print(f"[DEBUG] add_user_card: user_id={user_id}, character_name={character_name}, card_id={card_id}, rowcount={cursor.rowcount}")
+                    ''', (user_id, character_name, card_id, emotion_score))
                     issued_number = 0
                     if cursor.rowcount > 0:
                         issued_number = self.increment_card_issued_number(character_name, card_id)

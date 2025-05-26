@@ -223,6 +223,14 @@ class FinalChoiceButtonKagari(discord.ui.Button):
         session["score"] += self.score
         total = session["score"]
 
+        # --- 자동 기록: 선택지 ---
+        record_story_choice(self.user_id, "Kagari", "kagari_story", self.label, f"선택지 {self.label}")
+
+        # --- 자동 기록: 스토리 진행 ---
+        record_story_progress(self.user_id, "Kagari", "kagari_story", step=20, completed=True)
+
+        # (필요시) 챕터 해금, 장면 점수 기록도 여기에 추가
+
         # 카드 지급 로직 (점수 구간 기반)
         card_id = None
         for reward in STORY_CARD_REWARD:
@@ -278,6 +286,14 @@ class FinalChoiceButtonEros(discord.ui.Button):
         total = session["score"]
         character_name = "Eros"
 
+        # --- 자동 기록: 선택지 ---
+        record_story_choice(self.user_id, character_name, "eros_story", self.label_key, f"선택지 {self.label_key}")
+
+        # --- 자동 기록: 스토리 진행 ---
+        record_story_progress(self.user_id, character_name, "eros_story", step=20, completed=True)
+
+        # (필요시) 챕터 해금, 장면 점수 기록도 여기에 추가
+
         # 결과 메시지
         result_title, result_msg = CHOICE_RESULT_MESSAGES_EROS[self.label_key]
         embed = discord.Embed(
@@ -312,3 +328,15 @@ class FinalChoiceButtonEros(discord.ui.Button):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
         del story_sessions[self.user_id] 
+
+def record_story_choice(user_id, character_name, story_id, choice_index, choice_text):
+    db.save_story_choice(user_id, character_name, story_id, choice_index, choice_text)
+
+def record_story_progress(user_id, character_name, story_id, step, completed=True):
+    db.update_story_progress(user_id, character_name, story_id, step, completed)
+
+def record_story_unlock(user_id, character_name, chapter_id):
+    db.add_story_unlock(user_id, character_name, chapter_id)
+
+def record_scene_score(user_id, character_name, chapter_id, scene_id, score):
+    db.save_scene_score(user_id, character_name, chapter_id, scene_id, score) 

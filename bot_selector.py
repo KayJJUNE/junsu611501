@@ -2934,7 +2934,11 @@ def get_levelup_embed(level):
 
 def get_story_card_reward(character, score):
     from config import STORY_CARD_REWARD
+    print(f"[DEBUG][get_story_card_reward] character={character}, score={score}")
     for reward in STORY_CARD_REWARD:
+        print(f"[DEBUG][get_story_card_reward] checking reward: {reward}")
         if reward["character"] == character and reward["min"] <= score <= reward["max"]:
+            print(f"[DEBUG][get_story_card_reward] MATCH: {reward}")
             return reward["card"]
+    print(f"[DEBUG][get_story_card_reward] NO MATCH")
     return None

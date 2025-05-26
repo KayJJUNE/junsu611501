@@ -172,35 +172,30 @@ async def classify_emotion(user_message, user_id=None, character_name=None):
 async def on_user_message(user_id, user_message, channel, character_name, user_name):
     # 1. 세션이 없으면 스토리 시작(INSERT)
     if user_id not in story_sessions:
-        chapter_number = 1
-        # story_progress에 INSERT
-        db.start_story(user_id, character_name, chapter_number)
-        # story_unlocks에 INSERT
-        db.add_story_unlock(user_id, character_name, chapter_number)
+        chapter_number = 1  # (혹은 config에서 읽기)
+        start_story(user_id, character_name, chapter_number)
         story_sessions[user_id] = {"score": 0, "turn": 1}
 
     session = story_sessions[user_id]
     turn = session["turn"]
 
-    # 감정 점수 기록
-    score = await classify_emotion(user_message, user_id, character_name)
-    session["score"] += score
-    
-    # scene_scores에 기록
-    db.save_scene_score(user_id, character_name, 1, turn, score)
-
-    # story_progress 업데이트
-    db.update_story_progress(user_id, character_name, 1, turn, completed=False)
+    # 캐릭터별 턴 제한 분기
+    if character_name == "Kagari" and turn >= 40:
+        await show_final_choice_embed_kagari(user_id, channel)
+        del story_sessions[user_id]
+        return
+    elif character_name == "Eros" and turn >= 20:
+        await show_final_choice_embed_eros(user_id, channel)
+        del story_sessions[user_id]
+        return
 
     # 대화 처리
     if character_name == "Eros":
         ai_reply = await handle_eros_conversation(user_message, user_id, user_name, turn)
     else:
         ai_reply = await handle_kagari_conversation(user_message, user_id, user_name)
-    
     if ai_reply:
         await channel.send(ai_reply)
-    
     session["turn"] += 1
 
     print(f"[감정누적] user_id: {user_id}, 누적점수: {session['score']}, turn: {session['turn']}")
@@ -234,6 +229,8 @@ class FinalChoiceButtonKagari(discord.ui.Button):
         session = story_sessions[self.user_id]
         session["score"] += self.score
         total = session["score"]
+        
+        print(f"[DEBUG][FinalChoiceButtonKagari] user_id={self.user_id}, score={self.score}, total_score={total}")
 
         # --- 자동 기록: 선택지 ---
         record_story_choice(self.user_id, "Kagari", "kagari_story", self.label, f"선택지 {self.label}")
@@ -241,26 +238,28 @@ class FinalChoiceButtonKagari(discord.ui.Button):
         # --- 자동 기록: 스토리 진행 ---
         record_story_progress(self.user_id, "Kagari", 1, step=40, completed=True)
 
-        # (필요시) 챕터 해금, 장면 점수 기록도 여기에 추가
-
         # 카드 지급 로직 (점수 구간 기반)
         card_id = None
         for reward in STORY_CARD_REWARD:
             if reward["character"] == "Kagari" and reward["min"] <= total <= reward["max"]:
                 card_id = reward["card"]
+                print(f"[DEBUG][FinalChoiceButtonKagari] Found matching reward: min={reward['min']}, max={reward['max']}, card={card_id}")
                 break
 
         if card_id:
             if db.has_user_card(self.user_id, "Kagari", card_id):
+                print(f"[DEBUG][FinalChoiceButtonKagari] User already has card: {card_id}")
                 await interaction.response.send_message(
                     f"이미 [{card_id}] card is already in your collection.", ephemeral=True
                 )
             else:
+                print(f"[DEBUG][FinalChoiceButtonKagari] Adding card to user: {card_id}")
                 db.add_user_card(self.user_id, "Kagari", card_id)
                 await interaction.response.send_message(
                     f"Congratulations! You have obtained the [{card_id}] card.", ephemeral=True
                 )
         else:
+            print(f"[DEBUG][FinalChoiceButtonKagari] No card reward for score {total}")
             await interaction.response.send_message(
                 "Unfortunately, you did not obtain the card this time.", ephemeral=True
             )
@@ -283,7 +282,7 @@ class FinalChoiceViewEros(discord.ui.View):
         self.user_id = user_id
         self.add_item(FinalChoiceButtonEros("A", "Kagari", user_id, "A: Kagari"))
         self.add_item(FinalChoiceButtonEros("B", "Elysia", user_id, "B: Elysia"))
-        self.add_item(FinalChoiceButtonEros("C", "Ela", user_id, "C: Ela"))
+        self.add_item(FinalChoiceButtonEros("C", "Ira", user_id, "C: Ira"))
         self.add_item(FinalChoiceButtonEros("D", "Cang", user_id, "D: Cang (excited)"))
 
 class FinalChoiceButtonEros(discord.ui.Button):
@@ -297,14 +296,14 @@ class FinalChoiceButtonEros(discord.ui.Button):
         session = story_sessions[self.user_id]
         total = session["score"]
         character_name = "Eros"
+        
+        print(f"[DEBUG][FinalChoiceButtonEros] user_id={self.user_id}, choice={self.label_key}, total_score={total}")
 
         # --- 자동 기록: 선택지 ---
         record_story_choice(self.user_id, character_name, "eros_story", self.label_key, f"선택지 {self.label_key}")
 
         # --- 자동 기록: 스토리 진행 ---
         record_story_progress(self.user_id, character_name, 1, step=20, completed=True)
-
-        # (필요시) 챕터 해금, 장면 점수 기록도 여기에 추가
 
         # 결과 메시지
         result_title, result_msg = CHOICE_RESULT_MESSAGES_EROS[self.label_key]
@@ -321,21 +320,26 @@ class FinalChoiceButtonEros(discord.ui.Button):
             for reward in STORY_CARD_REWARD:
                 if reward["character"] == character_name and reward["min"] <= total <= reward["max"]:
                     card_id = reward["card"]
+                    print(f"[DEBUG][FinalChoiceButtonEros] Found matching reward for choice D: min={reward['min']}, max={reward['max']}, card={card_id}")
                     break
         else:
             for reward in STORY_CARD_REWARD:
                 if reward["character"] == character_name and reward["min"] <= total <= reward["max"]:
                     card_id = reward["card"]
+                    print(f"[DEBUG][FinalChoiceButtonEros] Found matching reward for other choice: min={reward['min']}, max={reward['max']}, card={card_id}")
                     break
 
         # 카드 지급 처리
         if card_id:
             if db.has_user_card(self.user_id, character_name, card_id):
+                print(f"[DEBUG][FinalChoiceButtonEros] User already has card: {card_id}")
                 embed.add_field(name="Card", value=f"You already have [{card_id}] card.", inline=False)
             else:
+                print(f"[DEBUG][FinalChoiceButtonEros] Adding card to user: {card_id}")
                 db.add_user_card(self.user_id, character_name, card_id)
                 embed.add_field(name="Card", value=f"Congratulations! You have obtained the [{card_id}] card.", inline=False)
         else:
+            print(f"[DEBUG][FinalChoiceButtonEros] No card reward for score {total}")
             embed.add_field(name="Card", value="Unfortunately, you did not obtain the card this time.", inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)

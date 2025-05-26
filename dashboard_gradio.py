@@ -357,6 +357,36 @@ def dashboard(user_id):
     df = get_user_cards(user_id)
     return df
 
+def log_conversation(user_id, character_name, message_role, content, token_count=None):
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO conversations (user_id, character_name, message_role, content, timestamp, token_count)
+        VALUES (%s, %s, %s, %s, now(), %s)
+    """, (user_id, character_name, message_role, content, token_count))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def log_story_progress(user_id, character_name, chapter_number, selected_choice=None, ending_type=None):
+    """
+    스토리 진행 상황을 story_progress 테이블에 자동 기록/업데이트합니다.
+    동일 유저-캐릭터-챕터 조합이 이미 있으면 업데이트, 없으면 새로 추가합니다.
+    """
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO story_progress (user_id, character_name, chapter_number, completed_at, selected_choice, ending_type)
+        VALUES (%s, %s, %s, now(), %s, %s)
+        ON CONFLICT (user_id, character_name, chapter_number) DO UPDATE
+        SET completed_at = now(),
+            selected_choice = EXCLUDED.selected_choice,
+            ending_type = EXCLUDED.ending_type
+    """, (user_id, character_name, chapter_number, selected_choice, ending_type))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 if __name__ == "__main__":
     with gr.Blocks(title="디스코드 챗봇 통합 대시보드") as demo:
         gr.Markdown("# 디스코드 챗봇 통합 대시보드")

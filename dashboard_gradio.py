@@ -340,9 +340,9 @@ def get_level_statistics():
             SELECT 
                 user_id,
                 CASE 
-                    WHEN SUM(emotion_score) < 100 THEN 'Rookie'
-                    WHEN SUM(emotion_score) < 300 THEN 'Iron'
-                    WHEN SUM(emotion_score) < 600 THEN 'Silver'
+                    WHEN SUM(emotion_score) < 10 THEN 'Rookie'
+                    WHEN SUM(emotion_score) < 50 THEN 'Iron'
+                    WHEN SUM(emotion_score) < 100 THEN 'Silver'
                     ELSE 'Gold'
                 END as level
             FROM affinity

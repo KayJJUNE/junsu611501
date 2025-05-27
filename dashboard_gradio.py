@@ -409,11 +409,12 @@ def get_emotion_score_history(user_id, character_name=None):
         SELECT 
             e.message,
             e.score,
+            SUM(e.score) OVER (PARTITION BY e.user_id, e.character_name ORDER BY e.timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as total_score,
             e.timestamp
         FROM emotion_log e
         WHERE e.user_id = %s
     """
-    params = [user_id]
+    params = [str(user_id)]
 
     if character_name:
         query += " AND e.character_name = %s"
@@ -423,6 +424,7 @@ def get_emotion_score_history(user_id, character_name=None):
 
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
+    df.columns = ["대화 내용", "스코어 변경", "총 스코어", "시간"]
     return df
 
 def get_emotion_score_summary(user_id):
@@ -461,7 +463,8 @@ def get_all_users_data():
     total_stats = pd.read_sql_query("""
         SELECT 
             COUNT(*) as total_messages,
-            COUNT(DISTINCT user_id) as total_users
+            COUNT(DISTINCT user_id) as total_users,
+            COUNT(DISTINCT CASE WHEN DATE(timestamp) = CURRENT_DATE THEN user_id END) as today_users
         FROM conversations
         WHERE message_role = 'user'
     """, conn)
@@ -519,18 +522,18 @@ def get_all_users_data():
         ORDER BY f.joined_at DESC
     """, conn)
 
-    # 3. 캐릭터별 랭킹
+    # 3. 캐릭터별 랭킹 (ambiguous 에러 방지: 컬럼에 테이블 별칭 추가)
     rankings = pd.read_sql_query("""
         WITH user_stats AS (
             SELECT 
-                user_id,
-                character_name,
-                emotion_score,
+                c.user_id,
+                c.character_name,
+                COALESCE(a.emotion_score, 0) as emotion_score,
                 COUNT(*) as message_count
             FROM conversations c
             LEFT JOIN affinity a ON c.user_id = a.user_id AND c.character_name = a.character_name
-            WHERE message_role = 'user'
-            GROUP BY user_id, character_name, emotion_score
+            WHERE c.message_role = 'user'
+            GROUP BY c.user_id, c.character_name, a.emotion_score
         )
         SELECT 
             user_id,

@@ -331,13 +331,10 @@ def show_all_rankings():
 
 def get_level_statistics():
     conn = psycopg2.connect(DATABASE_URL)
-    # 전체 유저 수 계산
     total_users = pd.read_sql_query("""
         SELECT COUNT(DISTINCT user_id) as total_users
         FROM affinity
     """, conn)["total_users"][0]
-
-    # 레벨별 유저 수 계산
     level_stats = pd.read_sql_query("""
         WITH user_levels AS (
             SELECT 
@@ -364,7 +361,7 @@ def get_level_statistics():
                 WHEN 'Silver' THEN 3
                 WHEN 'Gold' THEN 4
             END
-    """, conn, params=(total_users,))
+    """, conn, params=(int(total_users),))
     conn.close()
     return level_stats
 

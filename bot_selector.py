@@ -1727,6 +1727,25 @@ class BotSelector(commands.Bot):
             )
             await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
 
+        @self.tree.command(
+            name="feedback",
+            description="Leave your feedback"
+        )
+        async def feedback_command(interaction: discord.Interaction):
+            embed = discord.Embed(
+                title="Thank you for playing Zerolink!",
+                description="The program is currently in the testing phase, so there may be some bugs and incomplete features. Please leave your feedback through the link below (in English)",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="📧 Feedback Form",
+                value="[Click here to leave feedback](https://docs.google.com/forms/u/1/d/e/1FAIpQLSf4Y2QMiPvFPoYv5kzq_r1iqUmOKTo4RUjPi3xopOEQU6_qXw/viewform)",
+                inline=False
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
     async def setup_hook(self):
         print("봇 초기화 중...")
         try:

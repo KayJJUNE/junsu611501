@@ -2177,22 +2177,18 @@ class RankingSelect(discord.ui.Select):
                 color=color
             )
 
-            # TOP 10 표시
+            # ★★ 여기서 rankings를 임베드에 추가 ★★
             for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
-                user = await interaction.client.fetch_user(rank_user_id)
+                try:
+                    user = await interaction.client.fetch_user(int(rank_user_id))
+                except Exception:
+                    user = None
                 display_name = user.display_name if user else f"User{rank_user_id}"
                 grade = get_affinity_grade(affinity)
-                # Chat: ... 부분 삭제, 디자인 개선
-                if rank_user_id == user_id:
-                    value = (
-                        f"**🌟 Affinity:** `{affinity}` points\n"
-                        f"**🏅 Grade:** `{grade}`"
-                    )
-                else:
-                    value = (
-                        f"🌟 Affinity: `{affinity}` points\n"
-                        f"🏅 Grade: `{grade}`"
-                    )
+                value = (
+                    f"🌟 Affinity: `{affinity}` points\n"
+                    f"🏅 Grade: `{grade}`"
+                )
                 embed.add_field(
                     name=f"**{i}st: {display_name}**",
                     value=value,
@@ -2934,11 +2930,7 @@ def get_levelup_embed(level):
 
 def get_story_card_reward(character, score):
     from config import STORY_CARD_REWARD
-    print(f"[DEBUG][get_story_card_reward] character={character}, score={score}")
     for reward in STORY_CARD_REWARD:
-        print(f"[DEBUG][get_story_card_reward] checking reward: {reward}")
         if reward["character"] == character and reward["min"] <= score <= reward["max"]:
-            print(f"[DEBUG][get_story_card_reward] MATCH: {reward}")
             return reward["card"]
-    print(f"[DEBUG][get_story_card_reward] NO MATCH")
     return None

@@ -223,7 +223,15 @@ def get_dashboard_stats():
     total_affinity = pd.read_sql_query(
         "SELECT SUM(emotion_score) as total_affinity FROM affinity;", conn
     )["total_affinity"][0]
-    # 3. OpenAI 토큰 소비량
+    # 3. 총 대화한 유저 수
+    total_users = pd.read_sql_query(
+        "SELECT COUNT(DISTINCT user_id) as total_users FROM conversations WHERE message_role = 'user';", conn
+    )["total_users"][0]
+    # 4. 오늘 대화한 유저 수
+    today_users = pd.read_sql_query(
+        "SELECT COUNT(DISTINCT user_id) as today_users FROM conversations WHERE message_role = 'user' AND DATE(timestamp) = CURRENT_DATE;", conn
+    )["today_users"][0]
+    # 5. OpenAI 토큰 소비량
     try:
         total_tokens = pd.read_sql_query(
             "SELECT SUM(token_count) as total_tokens FROM conversations WHERE message_role='assistant';", conn
@@ -232,18 +240,20 @@ def get_dashboard_stats():
             total_tokens = 0
     except Exception:
         total_tokens = 0
-    # 4. 카드 등급별 출하량 및 백분율
+    # 6. 카드 등급별 출하량 및 백분율
     card_tiers = pd.read_sql_query(
         "SELECT SUBSTRING(card_id, 1, 1) as tier, COUNT(*) as count FROM user_cards GROUP BY tier;", conn
     )
     total_cards = card_tiers["count"].sum()
     card_tiers["percent"] = (card_tiers["count"] / total_cards * 100).round(2).astype(str) + "%"
-    # 레벨 통계 추가
+    # 7. 레벨 통계 추가
     level_stats = get_level_statistics()
     conn.close()
     return {
         "총 유저 메시지 수": total_user_messages,
         "총 친밀도 점수": total_affinity,
+        "총 대화한 유저 수": total_users,
+        "오늘 대화한 유저 수": today_users,
         "OpenAI 토큰 소비량": f"{total_tokens:,} 토큰",
         "카드 등급별 출하량": card_tiers,
         "레벨별 현황": level_stats
@@ -251,10 +261,11 @@ def get_dashboard_stats():
 
 def show_dashboard_stats():
     stats = get_dashboard_stats()
-    # 표/카드 형태로 반환
     return (
         f"총 유저 메시지 수: {stats['총 유저 메시지 수']}",
         f"총 친밀도 점수: {stats['총 친밀도 점수']}",
+        f"총 대화한 유저 수: {stats['총 대화한 유저 수']}",
+        f"오늘 대화한 유저 수: {stats['오늘 대화한 유저 수']}",
         f"OpenAI 토큰 소비량: {stats['OpenAI 토큰 소비량']}",
         stats["카드 등급별 출하량"],
         stats["레벨별 현황"]
@@ -588,10 +599,12 @@ if __name__ == "__main__":
             stats_btn = gr.Button("전체 통계 새로고침")
             stats_out1 = gr.Textbox(label="총 유저 메시지 수")
             stats_out2 = gr.Textbox(label="총 친밀도 점수")
-            stats_out3 = gr.Textbox(label="OpenAI 토큰 소비량")
-            stats_out4 = gr.Dataframe(label="카드 등급별 출하량 및 백분율")
-            stats_out5 = gr.Dataframe(label="레벨별 현황")
-            stats_btn.click(show_dashboard_stats, inputs=None, outputs=[stats_out1, stats_out2, stats_out3, stats_out4, stats_out5])
+            stats_out3 = gr.Textbox(label="총 대화한 유저 수")
+            stats_out4 = gr.Textbox(label="오늘 대화한 유저 수")
+            stats_out5 = gr.Textbox(label="OpenAI 토큰 소비량")
+            stats_out6 = gr.Dataframe(label="카드 등급별 출하량 및 백분율")
+            stats_out7 = gr.Dataframe(label="레벨별 현황")
+            stats_btn.click(show_dashboard_stats, inputs=None, outputs=[stats_out1, stats_out2, stats_out3, stats_out4, stats_out5, stats_out6, stats_out7])
 
         with gr.Tab("전체 랭킹"):
             gr.Markdown("## 전체 유저 랭킹")

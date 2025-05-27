@@ -3,6 +3,8 @@ import json
 import aiosqlite
 import discord
 import psycopg2
+from init_db import create_all_tables
+create_all_tables()
 import os
 
 # Railway 환경변수에서 DATABASE_URL 읽기

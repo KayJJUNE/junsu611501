@@ -444,6 +444,100 @@ def dashboard(user_id):
     df = get_user_cards(user_id)
     return df
 
+def get_all_users_data():
+    conn = psycopg2.connect(DATABASE_URL)
+    # 1. 전체 통계
+    total_stats = pd.read_sql_query("""
+        SELECT 
+            COUNT(*) as total_messages,
+            COUNT(DISTINCT user_id) as total_users
+        FROM conversations
+        WHERE message_role = 'user'
+    """, conn)
+
+    # 2. 유저별 상세 정보 (가입일, ID, 캐릭터별 메시지/호감도, 토탈)
+    user_details = pd.read_sql_query("""
+        WITH first_msg AS (
+            SELECT user_id, MIN(timestamp) as joined_at
+            FROM conversations
+            WHERE message_role = 'user'
+            GROUP BY user_id
+        ),
+        msg_counts AS (
+            SELECT user_id, character_name,
+                   COUNT(*) as msg_count
+            FROM conversations
+            WHERE message_role = 'user'
+            GROUP BY user_id, character_name
+        ),
+        affinity_scores AS (
+            SELECT user_id, character_name, emotion_score
+            FROM affinity
+        ),
+        total_msg AS (
+            SELECT user_id, COUNT(*) as total_msg
+            FROM conversations
+            WHERE message_role = 'user'
+            GROUP BY user_id
+        ),
+        total_affinity AS (
+            SELECT user_id, SUM(emotion_score) as total_affinity
+            FROM affinity
+            GROUP BY user_id
+        )
+        SELECT
+            f.user_id,
+            f.joined_at,
+            COALESCE(k.msg_count, 0) as kagari_messages,
+            COALESCE(e.msg_count, 0) as eros_messages,
+            COALESCE(l.msg_count, 0) as elysia_messages,
+            COALESCE(ka.emotion_score, 0) as kagari_affinity,
+            COALESCE(ea.emotion_score, 0) as eros_affinity,
+            COALESCE(la.emotion_score, 0) as elysia_affinity,
+            COALESCE(tm.total_msg, 0) as total_messages,
+            COALESCE(ta.total_affinity, 0) as total_affinity
+        FROM first_msg f
+        LEFT JOIN msg_counts k ON f.user_id = k.user_id AND k.character_name = 'Kagari'
+        LEFT JOIN msg_counts e ON f.user_id = e.user_id AND e.character_name = 'Eros'
+        LEFT JOIN msg_counts l ON f.user_id = l.user_id AND l.character_name = 'Elysia'
+        LEFT JOIN affinity_scores ka ON f.user_id = ka.user_id AND ka.character_name = 'Kagari'
+        LEFT JOIN affinity_scores ea ON f.user_id = ea.user_id AND ea.character_name = 'Eros'
+        LEFT JOIN affinity_scores la ON f.user_id = la.user_id AND la.character_name = 'Elysia'
+        LEFT JOIN total_msg tm ON f.user_id = tm.user_id
+        LEFT JOIN total_affinity ta ON f.user_id = ta.user_id
+        ORDER BY f.joined_at DESC
+    """, conn)
+
+    # 3. 캐릭터별 랭킹
+    rankings = pd.read_sql_query("""
+        WITH user_stats AS (
+            SELECT 
+                user_id,
+                character_name,
+                emotion_score,
+                COUNT(*) as message_count
+            FROM conversations c
+            LEFT JOIN affinity a ON c.user_id = a.user_id AND c.character_name = a.character_name
+            WHERE message_role = 'user'
+            GROUP BY user_id, character_name, emotion_score
+        )
+        SELECT 
+            user_id,
+            character_name,
+            emotion_score,
+            message_count,
+            RANK() OVER (PARTITION BY character_name ORDER BY emotion_score DESC, message_count DESC) as rank
+        FROM user_stats
+        ORDER BY character_name, rank
+    """, conn)
+
+    conn.close()
+    return {
+        "total_stats": total_stats,
+        "user_details": user_details,
+        "rankings": rankings
+    }
+
 if __name__ == "__main__":
     with gr.Blocks(title="디스코드 챗봇 통합 대시보드") as demo:
         gr.Markdown("# 디스코드 챗봇 통합 대시보드")
@@ -513,5 +607,19 @@ if __name__ == "__main__":
             story_btn = gr.Button("스토리 진행 현황 새로고침")
             story_out = gr.Dataframe(label="캐릭터별 챕터 진행 현황")
             story_btn.click(get_all_story_progress, inputs=None, outputs=[story_out])
+
+        with gr.Tab("전체 유저 데이터"):
+            gr.Markdown("## 전체 유저 데이터")
+            user_details_out = gr.Dataframe(
+                label="User Details",
+                headers=[
+                    "User ID", "Join Date",
+                    "Kagari Messages", "Eros Messages", "Elysia Messages",
+                    "Kagari Affinity", "Eros Affinity", "Elysia Affinity",
+                    "Total Messages", "Total Affinity"
+                ]
+            )
+            get_all_users_data_btn = gr.Button("전체 유저 데이터 새로고침")
+            get_all_users_data_btn.click(get_all_users_data, inputs=None, outputs=user_details_out)
 
     demo.launch(share=True)

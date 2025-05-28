@@ -2119,7 +2119,7 @@ class DiscordShareButton(discord.ui.Button):
         self.card_name = card_name
         self.card_desc = card_desc
         self.image_path = image_path
-        self.channel_id = 1371549481371435100  # 사용자가 제공한 채널 ID로 수정
+        self.channel_id = 1376830716855189575  # 사용자가 제공한 채널 ID로 수정
 
     async def callback(self, interaction: discord.Interaction):
         channel = interaction.client.get_channel(self.channel_id)
@@ -2140,7 +2140,7 @@ class DiscordShareButton(discord.ui.Button):
 class CardShareView(discord.ui.View):
     def __init__(self, card_name, card_desc, image_path):
         super().__init__()
-        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1371549481371435100))  # 사용자가 제공한 채널 ID로 수정
+        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1376830716855189575))  # 사용자가 제공한 채널 ID로 수정
 
 class RankingSelect(discord.ui.Select):
     def __init__(self, db):

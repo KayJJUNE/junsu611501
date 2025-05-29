@@ -694,7 +694,7 @@ class BotSelector(commands.Bot):
 
         @self.tree.command(
             name="reset_affinity",
-            description="친밀도를 초기화합니다"
+            description="Reset affinity"
         )
         async def reset_affinity(interaction: discord.Interaction, target: discord.Member = None):
             # 관리자 권한 확인
@@ -938,7 +938,7 @@ class BotSelector(commands.Bot):
 
         @self.tree.command(
             name="remove_admin_role",
-            description="관리자 역할 제거"
+            description="Remove the administrator role"
         )
         async def remove_admin_role(interaction: discord.Interaction, role: discord.Role):
             if not interaction.user.guild_permissions.administrator:
@@ -953,7 +953,7 @@ class BotSelector(commands.Bot):
 
         @self.tree.command(
             name="set_daily_limit",
-            description="일일 메시지 제한 설정 (관리자 전용)"
+            description="Setting a daily message limit (admin only)"
         )
         async def set_daily_limit(interaction: discord.Interaction, limit: int):
             if not self.settings.is_admin(interaction.user):
@@ -1574,7 +1574,7 @@ class BotSelector(commands.Bot):
 
         @self.tree.command(
             name="message_add",
-            description="관리자: 유저의 메시지 수를 수동으로 추가합니다."
+            description="Admin: Manually add a user's message count."
         )
         async def message_add_command(interaction: discord.Interaction, target: discord.Member, count: int, character: str):
             if not self.settings.is_admin(interaction.user):
@@ -1587,7 +1587,7 @@ class BotSelector(commands.Bot):
                     user_id=target.id,
                     character_name=character,
                     role="user",
-                    content="[관리자 메시지 추가]",
+                    content="[Add an admin message]",
                     language="en"
                 )
             embed = discord.Embed(
@@ -2018,7 +2018,7 @@ class CardClaimButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("지정된 유저만 클릭할 수 있습니다.", ephemeral=True)
+            await interaction.response.send_message("Only specified users can click.", ephemeral=True)
             return
         try:
             self.parent_view.animation_running = False
@@ -2199,11 +2199,13 @@ class RankingSelect(discord.ui.Select):
 
             # ★★ 여기서 rankings를 임베드에 추가 ★★
             for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
+                display_name = f"User{rank_user_id}"
                 try:
                     user = await interaction.client.fetch_user(int(rank_user_id))
-                except Exception:
-                    user = None
-                display_name = user.display_name if user else f"User{rank_user_id}"
+                    if user and hasattr(user, "display_name"):
+                        display_name = user.display_name
+                except Exception as e:
+                    print(f"[랭킹] fetch_user 실패: {rank_user_id}, 에러: {e}")
                 grade = get_affinity_grade(affinity)
                 value = (
                     f"🌟 Affinity: `{affinity}` points\n"
@@ -2244,9 +2246,9 @@ class RankingSelect(discord.ui.Select):
             import traceback
             print(traceback.format_exc())
             if not interaction.response.is_done():
-                await interaction.response.send_message("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.response.send_message("An error occurred while fetching ranking information.", ephemeral=True)
             else:
-                await interaction.followup.send("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("An error occurred while fetching ranking information.", ephemeral=True)
 
 class BackButton(discord.ui.Button):
     def __init__(self):
@@ -2340,7 +2342,7 @@ class ChapterStartButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         try:
-            print("[DEBUG] ChapterStartButton callback 진입")
+            print("[DEBUG] ChapterStartButton callback Enter")
             if interaction.user.id != self.user_id:
                 print("[DEBUG] Not yourself - Ignoring button click")
                 await interaction.response.send_message("Only you can start.", ephemeral=True)

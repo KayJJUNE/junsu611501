@@ -2114,12 +2114,13 @@ class CardClaimButton(discord.ui.Button):
             await interaction.response.send_message("An error occurred while claiming the card.", ephemeral=True)
 
 class DiscordShareButton(discord.ui.Button):
-    def __init__(self, card_name, card_desc, image_path, channel_id):
+    def __init__(self, card_name, card_desc, image_path, channel_id=None):
         super().__init__(label="Share to Discord", style=discord.ButtonStyle.primary, emoji="💬")
         self.card_name = card_name
         self.card_desc = card_desc
         self.image_path = image_path
-        self.channel_id = 1371549481371435100  # 사용자가 제공한 채널 ID로 수정
+        # 공유 채널 ID를 새 값으로 고정
+        self.channel_id = 1376830716855189575
 
     async def callback(self, interaction: discord.Interaction):
         channel = interaction.client.get_channel(self.channel_id)
@@ -2140,7 +2141,7 @@ class DiscordShareButton(discord.ui.Button):
 class CardShareView(discord.ui.View):
     def __init__(self, card_name, card_desc, image_path):
         super().__init__()
-        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1371549481371435100))  # 사용자가 제공한 채널 ID로 수정
+        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1376830716855189575))
 
 class RankingSelect(discord.ui.Select):
     def __init__(self, db):

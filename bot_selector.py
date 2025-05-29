@@ -2175,80 +2175,117 @@ class RankingSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         try:
+            # 초기 응답 지연
+            await interaction.response.defer()
+            
             character_name = self.values[0]
             user_id = interaction.user.id
 
+            # 랭킹 데이터 가져오기
             if character_name == "total":
-                # 전체 랭킹 조회
                 rankings = self.db.get_total_ranking()
                 user_rank = self.db.get_user_total_rank(user_id)
                 title = "👑 Total Chat Ranking TOP 10"
                 color = discord.Color.gold()
             else:
-                # 캐릭터별 랭킹 조회
                 rankings = self.db.get_character_ranking(character_name)
                 user_rank = self.db.get_user_character_rank(user_id, character_name)
                 char_info = CHARACTER_INFO[character_name]
                 title = f"{char_info['emoji']} {character_name} Chat Ranking TOP 10"
                 color = char_info['color']
 
-            embed = discord.Embed(
-                title=title,
-                color=color
-            )
+            # 임베드 생성
+            embed = discord.Embed(title=title, color=color)
 
-            # ★★ 여기서 rankings를 임베드에 추가 ★★
-            for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
-                display_name = f"User{rank_user_id}"
+            # TOP 10 유저 정보 병렬로 가져오기
+            user_ids = [int(rank_user_id) for rank_user_id, _, _ in rankings[:10]]
+            user_cache = {}
+            
+            # 병렬로 유저 정보 가져오기
+            async def fetch_user_safe(user_id):
                 try:
-                    user = await interaction.client.fetch_user(int(rank_user_id))
-                    if user and hasattr(user, "display_name"):
-                        display_name = user.display_name
+                    user = await interaction.client.fetch_user(user_id)
+                    return user_id, user
                 except Exception as e:
-                    print(f"[랭킹] fetch_user 실패: {rank_user_id}, 에러: {e}")
-                grade = get_affinity_grade(affinity)
-                value = (
-                    f"🌟 Affinity: `{affinity}` points\n"
-                    f"🏅 Grade: `{grade}`"
-                )
-                embed.add_field(
-                    name=f"**{i}st: {display_name}**",
-                    value=value,
-                    inline=False
-                )
+                    print(f"[랭킹] fetch_user 실패: {user_id}, 에러: {e}")
+                    return user_id, None
 
-            # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
+            # 병렬 처리
+            tasks = [fetch_user_safe(uid) for uid in user_ids]
+            results = await asyncio.gather(*tasks)
+            
+            # 결과를 캐시에 저장
+            for uid, user in results:
+                user_cache[uid] = user
+
+            # TOP 10 랭킹 표시
+            for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
+                try:
+                    user = user_cache.get(int(rank_user_id))
+                    display_name = user.display_name if user else f"User{rank_user_id}"
+                    grade = get_affinity_grade(affinity)
+                    
+                    value = (
+                        f"🌟 Affinity: `{affinity}` points\n"
+                        f"🏅 Grade: `{grade}`"
+                    )
+                    
+                    embed.add_field(
+                        name=f"**{i}st: {display_name}**",
+                        value=value,
+                        inline=False
+                    )
+                except Exception as e:
+                    print(f"[랭킹] 필드 추가 실패: {rank_user_id}, 에러: {e}")
+                    continue
+
+            # 사용자 자신의 랭킹 추가 (TOP 10 밖인 경우)
             if user_rank > 10:
-                user = await interaction.client.fetch_user(user_id)
-                display_name = user.display_name if user else f"User{user_id}"
-                user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
+                try:
+                    user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
+                    if user_stats:
+                        embed.add_field(
+                            name="\u200b",
+                            value="─────────────────",
+                            inline=False
+                        )
+                        
+                        embed.add_field(
+                            name=f"{user_rank}st: {interaction.user.display_name} (Your Rank)",
+                            value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
+                            inline=False
+                        )
+                except Exception as e:
+                    print(f"[랭킹] 사용자 랭킹 추가 실패: {e}")
 
-                embed.add_field(
-                    name="\u200b",
-                    value="─────────────────",
-                    inline=False
-                )
-
-                embed.add_field(
-                    name=f"{user_rank}st: {display_name} (Your Rank)",
-                    value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
-                    inline=False
-                )
-
-            # 뒤로가기 버튼이 포함된 새로운 뷰 생성
+            # 뷰 생성 및 메시지 수정
             view = RankingView(self.db)
             view.add_item(BackButton())
-
-            await interaction.response.edit_message(embed=embed, view=view)
+            
+            await interaction.followup.edit_message(
+                message_id=interaction.message.id,
+                embed=embed,
+                view=view
+            )
 
         except Exception as e:
             print(f"Error in ranking select: {e}")
             import traceback
             print(traceback.format_exc())
-            if not interaction.response.is_done():
-                await interaction.response.send_message("An error occurred while fetching ranking information.", ephemeral=True)
-            else:
-                await interaction.followup.send("An error occurred while fetching ranking information.", ephemeral=True)
+            
+            error_embed = discord.Embed(
+                title="Error",
+                description="랭킹 정보를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+                color=discord.Color.red()
+            )
+            
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
+                else:
+                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+            except:
+                pass
 
 class BackButton(discord.ui.Button):
     def __init__(self):

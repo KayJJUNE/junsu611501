@@ -2124,30 +2124,27 @@ class CardShareView(discord.ui.View):
         self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1371549481371435100))  # 사용자가 제공한 채널 ID로 수정
 
 class RankingSelect(discord.ui.Select):
-    def __init__(self, db):
-        self.db = db
-        options = [
-            discord.SelectOption(
-                label="Kagari Chat Ranking",
-                description="Top 10 users by affinity and chat count with Kagari",
-                value="Kagari",
-                emoji="🌸"
-            ),
-            discord.SelectOption(
-                label="Eros Chat Ranking",
-                description="Top 10 users by affinity and chat count with Eros",
-                value="Eros",
-                emoji="💝"
-            ),
-            discord.SelectOption(
-                label="Total Chat Ranking",
-                description="Top 10 users by total affinity and chat count across all characters",
-                value="total",
-                emoji="👑"
-            )
-        ]
+    def __init__(self, rankings: list, ranking_type: str):
+        self.ranking_type = ranking_type
+        options = []
+        
+        for i, (user_id, score, messages) in enumerate(rankings, 1):
+            user = bot.get_user(user_id)
+            if user:
+                if ranking_type == "total":
+                    label = f"{i}위: {user.name}"
+                    description = f"친밀도: {score} | 대화: {messages}회"
+                else:
+                    label = f"{i}위: {user.name}"
+                    description = f"친밀도: {score}"
+                options.append(discord.SelectOption(
+                    label=label,
+                    description=description,
+                    value=str(user_id)
+                ))
+        
         super().__init__(
-            placeholder="Select the ranking you want to check",
+            placeholder="랭킹을 선택하세요",
             min_values=1,
             max_values=1,
             options=options

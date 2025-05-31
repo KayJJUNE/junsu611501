@@ -709,12 +709,12 @@ class CharacterBot:
             message = '\n'.join(filtered_lines)
         await channel.send(message)
 
-    def remove_channel(self, channel_id: int):
-        """채널 비활성화(삭제)"""
-        if channel_id in self.active_channels:
-            del self.active_channels[channel_id]
-        if channel_id in self.message_history:
-            del self.message_history[channel_id]
+    def remove_channel(self, channel_id):
+        # 채널 ID가 값(user_id: channel_id)에 있을 때 삭제
+        # (user_id, channel_id) 구조이므로 값으로 삭제
+        user_ids_to_remove = [uid for uid, cid in self.active_channels.items() if cid == channel_id]
+        for uid in user_ids_to_remove:
+            del self.active_channels[uid]
 
     async def update_affinity(self, user_id, character_name, message, timestamp, mode="chat"):
         self.db.update_affinity(

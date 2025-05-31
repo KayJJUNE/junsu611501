@@ -2174,6 +2174,7 @@ class RankingSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        print("[DEBUG] RankingSelect callback called")
         try:
             character_name = self.values[0]
             user_id = interaction.user.id
@@ -2237,16 +2238,29 @@ class RankingSelect(discord.ui.Select):
             view = RankingView(self.db)
             view.add_item(BackButton())
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            try:
+                print(f"Sending message with {len(embeds)} embeds and {len(files)} files")
+                await interaction.response.send_message(
+                    embeds=embeds,
+                    files=files,
+                    view=view,
+                    ephemeral=True
+                )
+            except Exception as e:
+                print(f"Error sending message: {e}")
+                await interaction.followup.send(
+                    "An error occurred while loading the character selection menu. Please try again.",
+                    ephemeral=True
+                )
 
         except Exception as e:
             print(f"Error in ranking select: {e}")
             import traceback
             print(traceback.format_exc())
             if not interaction.response.is_done():
-                await interaction.response.send_message("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.response.send_message("An error occurred while loading ranking information.", ephemeral=True)
             else:
-                await interaction.followup.send("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("An error occurred while loading ranking information.", ephemeral=True)
 
 class BackButton(discord.ui.Button):
     def __init__(self):

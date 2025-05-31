@@ -570,6 +570,7 @@ class BotSelector(commands.Bot):
                 embeds.append(selection_embed)
 
                 try:
+                    print(f"Sending message with {len(embeds)} embeds and {len(files)} files")
                     await interaction.response.send_message(
                         embeds=embeds,
                         files=files,
@@ -2147,26 +2148,23 @@ class RankingSelect(discord.ui.Select):
         self.db = db
         options = [
             discord.SelectOption(
-                label="Kagari Chat Ranking",
-                description="Top 10 users by affinity and chat count with Kagari",
-                value="Kagari",
-                emoji="🌸"
-            ),
-            discord.SelectOption(
-                label="Eros Chat Ranking",
-                description="Top 10 users by affinity and chat count with Eros",
-                value="Eros",
-                emoji="💝"
-            ),
-            discord.SelectOption(
-                label="Total Chat Ranking",
-                description="Top 10 users by total affinity and chat count across all characters",
+                label="Total Ranking",
+                description="View total chat ranking across all characters",
                 value="total",
                 emoji="👑"
             )
         ]
+        for char_name, char_info in CHARACTER_INFO.items():
+            options.append(
+                discord.SelectOption(
+                    label=f"{char_name} Ranking",
+                    description=f"View {char_name} chat ranking",
+                    value=char_name,
+                    emoji=char_info['emoji']
+                )
+            )
         super().__init__(
-            placeholder="Select the ranking you want to check",
+            placeholder="Select ranking type",
             min_values=1,
             max_values=1,
             options=options
@@ -2179,13 +2177,11 @@ class RankingSelect(discord.ui.Select):
             user_id = interaction.user.id
 
             if character_name == "total":
-                # 전체 랭킹 조회
                 rankings = self.db.get_total_ranking()
                 user_rank = self.db.get_user_total_rank(user_id)
                 title = "👑 Total Chat Ranking TOP 10"
                 color = discord.Color.gold()
             else:
-                # 캐릭터별 랭킹 조회
                 rankings = self.db.get_character_ranking(character_name)
                 user_rank = self.db.get_user_character_rank(user_id, character_name)
                 char_info = CHARACTER_INFO[character_name]
@@ -2197,47 +2193,54 @@ class RankingSelect(discord.ui.Select):
                 color=color
             )
 
-            # 랭킹 정보를 임베드에 추가
-            for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
+            if not rankings:
+                await interaction.response.send_message("No ranking data available.", ephemeral=True)
+                return
+
+            for i, row in enumerate(rankings[:10], 1):
                 try:
+                    # row unpacking이 실패할 수 있으니 안전하게 처리
+                    if len(row) == 3:
+                        rank_user_id, affinity, messages = row
+                    elif len(row) == 2:
+                        rank_user_id, affinity = row
+                        messages = 0
+                    else:
+                        continue
                     user = await interaction.client.fetch_user(int(rank_user_id))
-                except Exception:
-                    user = None
-                display_name = user.display_name if user else f"User{rank_user_id}"
-                grade = get_affinity_grade(affinity)
-                value = (
-                    f"🌟 Affinity: `{affinity}` points\n"
-                    f"🏅 Grade: `{grade}`"
-                )
-                embed.add_field(
-                    name=f"**{i}st: {display_name}**",
-                    value=value,
-                    inline=False
-                )
+                    display_name = user.display_name if user else f"User{rank_user_id}"
+                    grade = get_affinity_grade(affinity)
+                    value = (
+                        f"🌟 Affinity: `{affinity}` points\n"
+                        f"🏅 Grade: `{grade}`"
+                    )
+                    embed.add_field(
+                        name=f"**{i}st: {display_name}**",
+                        value=value,
+                        inline=False
+                    )
+                except Exception as e:
+                    print(f"Error in ranking row: {e}")
+                    continue
 
-            # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
-            if user_rank > 10:
-                user = await interaction.client.fetch_user(user_id)
-                display_name = user.display_name if user else f"User{user_id}"
-                user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
+            # 사용자의 랭킹 정보 추가
+            if user_rank:
+                try:
+                    user = await interaction.client.fetch_user(user_id)
+                    display_name = user.display_name if user else f"User{user_id}"
+                    grade = get_affinity_grade(user_rank[1])
+                    embed.add_field(
+                        name="Your Ranking",
+                        value=f"**Rank {user_rank[0]}: {display_name}**\n🌟 Affinity: `{user_rank[1]}` points\n🏅 Grade: `{grade}`",
+                        inline=False
+                    )
+                except Exception as e:
+                    print(f"Error adding user rank: {e}")
 
-                embed.add_field(
-                    name="\u200b",
-                    value="─────────────────",
-                    inline=False
-                )
-
-                embed.add_field(
-                    name=f"{user_rank}st: {display_name} (Your Rank)",
-                    value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
-                    inline=False
-                )
-
-            # 뒤로가기 버튼이 포함된 새로운 뷰 생성
-            view = RankingView(self.db)
+            # 뒤로가기 버튼 추가
+            view = discord.ui.View()
             view.add_item(BackButton())
 
-            # 임베드 전송
             if not interaction.response.is_done():
                 await interaction.response.edit_message(embed=embed, view=view)
             else:

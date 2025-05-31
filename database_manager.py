@@ -732,43 +732,25 @@ class DatabaseManager:
             return []
 
     def get_total_ranking(self) -> list:
-        """모든 캐릭터의 통합 친밀도와 대화 횟수 랭킹을 조회합니다."""
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute('''
-                        SELECT a.user_id, 
-                               COALESCE(a.total_emotion, 0) as total_emotion,
-                               COALESCE(m.total_messages, 0) as total_messages
+                        SELECT 
+                            COALESCE(a.user_id, m.user_id) as user_id,
+                            COALESCE(a.total_emotion, 0) as total_emotion,
+                            COALESCE(m.total_messages, 0) as total_messages
                         FROM (
                             SELECT user_id, SUM(emotion_score) as total_emotion
                             FROM affinity
                             GROUP BY user_id
                         ) a
-                        LEFT JOIN (
+                        FULL OUTER JOIN (
                             SELECT user_id, COUNT(*) as total_messages
                             FROM conversations
                             WHERE message_role = 'user'
                             GROUP BY user_id
                         ) m ON a.user_id = m.user_id
-
-                        UNION
-
-                        SELECT m.user_id, 
-                               COALESCE(a.total_affinity, 0) as total_affinity,
-                               COALESCE(m.total_messages, 0) as total_messages
-                        FROM (
-                            SELECT user_id, COUNT(*) as total_messages
-                            FROM conversations
-                            WHERE message_role = 'user'
-                            GROUP BY user_id
-                        ) m
-                        LEFT JOIN (
-                            SELECT user_id, SUM(emotion_score) as total_emotion
-                            FROM affinity
-                            GROUP BY user_id
-                        ) a ON m.user_id = a.user_id
-
                         ORDER BY total_emotion DESC, total_messages DESC
                         LIMIT 10
                     ''')

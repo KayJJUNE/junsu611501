@@ -2167,15 +2167,16 @@ class RankingSelect(discord.ui.Select):
                 user_rank = self.db.get_user_total_rank(user_id)
                 title = "👑 Total Chat Ranking TOP 10"
                 color = discord.Color.gold()
+                embed = discord.Embed(title=title, color=color)
 
-                # TOP 10 표시 (컬럼명 주의!)
-                for i, (rank_user_id, total_affinity, total_messages) in enumerate(rankings[:10], 1):
+                # TOP 10 표시 (컬럼명 통일: emotion_score, message_count)
+                for i, (rank_user_id, emotion_score, message_count) in enumerate(rankings[:10], 1):
                     user = await interaction.client.fetch_user(rank_user_id)
                     display_name = user.display_name if user else f"User{rank_user_id}"
-                    grade = get_affinity_grade(total_affinity)
+                    grade = get_affinity_grade(emotion_score)
                     value = (
-                        f"🌟 Affinity: `{total_affinity}` points | "
-                        f"💬 Chat: `{total_messages}` times\n"
+                        f"🌟 Affinity: `{emotion_score}` points | "
+                        f"💬 Chat: `{message_count}` times\n"
                         f"🏅 Grade: `{grade}`"
                     )
                     embed.add_field(

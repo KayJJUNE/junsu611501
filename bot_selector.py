@@ -570,7 +570,6 @@ class BotSelector(commands.Bot):
                 embeds.append(selection_embed)
 
                 try:
-                    print(f"Sending message with {len(embeds)} embeds and {len(files)} files")
                     await interaction.response.send_message(
                         embeds=embeds,
                         files=files,
@@ -2198,7 +2197,7 @@ class RankingSelect(discord.ui.Select):
                 color=color
             )
 
-            # ★★ 여기서 rankings를 임베드에 추가 ★★
+            # 랭킹 정보를 임베드에 추가
             for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
                 try:
                     user = await interaction.client.fetch_user(int(rank_user_id))
@@ -2238,20 +2237,11 @@ class RankingSelect(discord.ui.Select):
             view = RankingView(self.db)
             view.add_item(BackButton())
 
-            try:
-                print(f"Sending message with {len(embeds)} embeds and {len(files)} files")
-                await interaction.response.send_message(
-                    embeds=embeds,
-                    files=files,
-                    view=view,
-                    ephemeral=True
-                )
-            except Exception as e:
-                print(f"Error sending message: {e}")
-                await interaction.followup.send(
-                    "An error occurred while loading the character selection menu. Please try again.",
-                    ephemeral=True
-                )
+            # 임베드 전송
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(embed=embed, view=view)
+            else:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             print(f"Error in ranking select: {e}")

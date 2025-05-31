@@ -225,105 +225,134 @@ class CharacterSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         try:
             selected_char = self.values[0]
-            
-            # BotSelector의 create_character_channel 메서드 사용
-            channel = await self.bot_selector.create_character_channel(
-                interaction.guild,
-                selected_char,
-                interaction.user
-            )
-            
-            if not channel:
-                await interaction.response.send_message(
-                    "채널 생성 중 오류가 발생했습니다. 다시 시도해주세요.",
-                    ephemeral=True
-                )
-                return
 
-            # 최근 대화 10개 출력 (임베드)
-            try:
-                recent_messages = self.bot_selector.db.get_user_character_messages(interaction.user.id, selected_char, limit=10)
-                if recent_messages:
-                    history_lines = []
-                    for msg in recent_messages:
-                        if msg["role"] == "user":
-                            history_lines.append(f"Me: {msg['content']}")
-                        else:
-                            history_lines.append(f"{selected_char}: {msg['content']}")
-                    history_text = '\n'.join(history_lines)
-                    embed = discord.Embed(
-                        title=f"Previous conversations (last 10)",
-                        description=f"```{history_text}```",
-                        color=discord.Color.dark_grey()
-                    )
-                    await channel.send(embed=embed)
-            except Exception as e:
-                print(f"이전 대화 임베드 출력 오류: {e}")
-
-            # 선택된 캐릭터 봇에 채널 추가
-            selected_bot = self.bot_selector.character_bots.get(selected_char)
-            if selected_bot:
+            # 채널 생성 및 설정
+            category = discord.utils.get(interaction.guild.categories, name="chatbot")
+            if not category:
                 try:
-                    # 채널 등록
-                    success, message = await selected_bot.add_channel(channel.id, interaction.user.id)
-
-                    if success:
-                        # 채널 생성 알림 메시지
-                        await interaction.response.send_message(
-                            f"Start chatting with {selected_char} in {channel.mention}!",
-                            ephemeral=True
-                        )
-
-                        # 언어 선택 임베드 생성
-                        embed = discord.Embed(
-                            title="🌍 Language Selection",
-                            description="Please select the language for conversation.",
-                            color=discord.Color.blue()
-                        )
-
-                        # 언어별 설명 추가
-                        languages = {
-                            "English": "English - Start conversation in English",
-                            "[ベータ] 日本語": "Japanese - 日本語で会話を始めます",
-                            "[Beta版] 中文": "Chinese - 开始用中文对话"
-                        }
-
-                        language_description = "\n".join([f"• {key}: {value}" for key, value in languages.items()])
-                        embed.add_field(
-                            name="Available Languages",
-                            value=language_description,
-                            inline=False
-                        )
-
-                        # 언어 선택 뷰 생성
-                        view = LanguageSelectView(self.bot_selector.db, interaction.user.id, selected_char)
-
-                        # 새로 생성된 채널에 임베드와 언어 선택 버튼 전송
-                        await channel.send(content="**Please select your language**", embed=embed, view=view)
-                    else:
-                        await channel.send("채널 등록 중 오류가 발생했습니다. 채널을 다시 생성해주세요.")
-                        await channel.delete()
-                        return
-
+                    category = await interaction.guild.create_category("chatbot")
                 except Exception as e:
-                    print(f"Error in adding channel: {e}")
-                    import traceback
-                    print(traceback.format_exc())
-                    if not interaction.response.is_done():
-                        await interaction.response.send_message(
-                            "채널 설정 중 오류가 발생했습니다. 다시 시도해주세요.",
-                            ephemeral=True
-                        )
-                    else:
-                        await interaction.followup.send(
-                            "채널 설정 중 오류가 발생했습니다. 다시 시도해주세요.",
-                            ephemeral=True
-                        )
-            else:
-                await interaction.response.send_message(
-                    "선택한 캐릭터를 찾을 수 없습니다.",
-                    ephemeral=True
+                    print(f"Category creation error: {e}")
+                    await interaction.response.send_message(
+                        "Please check bot permissions.",
+                        ephemeral=True
+                    )
+                    return
+
+            channel_name = f"{selected_char.lower()}-{interaction.user.name.lower()}"
+            overwrites = {
+                interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
+
+            try:
+                # 채널 생성
+                channel = await interaction.guild.create_text_channel(
+                    name=channel_name,
+                    category=category,
+                    overwrites=overwrites
                 )
+
+                # 최근 대화 10개 출력 (임베드)
+                try:
+                    recent_messages = self.bot_selector.db.get_user_character_messages(interaction.user.id, selected_char, limit=10)
+                    if recent_messages:
+                        history_lines = []
+                        for msg in recent_messages:
+                            if msg["role"] == "user":
+                                history_lines.append(f"Me: {msg['content']}")
+                            else:
+                                history_lines.append(f"{selected_char}: {msg['content']}")
+                        history_text = '\n'.join(history_lines)
+                        embed = discord.Embed(
+                            title=f"Previous conversations (last 10)",
+                            description=f"```{history_text}```",
+                            color=discord.Color.dark_grey()
+                        )
+                        await channel.send(embed=embed)
+                except Exception as e:
+                    print(f"이전 대화 임베드 출력 오류: {e}")
+
+                # 선택된 캐릭터 봇에 채널 추가
+                selected_bot = self.bot_selector.character_bots.get(selected_char)
+                if selected_bot:
+                    try:
+                        # 채널 등록
+                        success, message = await selected_bot.add_channel(channel.id, interaction.user.id)
+
+                        if success:
+                            # 채널 생성 알림 메시지
+                            await interaction.response.send_message(
+                                f"Start chatting with {selected_char} in {channel.mention}!",
+                                ephemeral=True
+                            )
+
+                            # 언어 선택 임베드 생성
+                            embed = discord.Embed(
+                                title="🌍 Language Selection",
+                                description="Please select the language for conversation.",
+                                color=discord.Color.blue()
+                            )
+
+                            # 언어별 설명 추가
+                            languages = {
+                                "English": "English - Start conversation in English",
+                                "[ベータ] 日本語": "Japanese - 日本語で会話を始めます",
+                                "[Beta版] 中文": "Chinese - 开始用中文对话"
+                            }
+
+                            language_description = "\n".join([f"• {key}: {value}" for key, value in languages.items()])
+                            embed.add_field(
+                                name="Available Languages",
+                                value=language_description,
+                                inline=False
+                            )
+
+                            # 언어 선택 뷰 생성
+                            view = LanguageSelectView(self.bot_selector.db, interaction.user.id, selected_char)
+
+                            # 새로 생성된 채널에 임베드와 언어 선택 버튼 전송
+                            await channel.send(content="**Please select your language**", embed=embed, view=view)
+                        else:
+                            await channel.send("채널 등록 중 오류가 발생했습니다. 채널을 다시 생성해주세요.")
+                            await channel.delete()
+                            return
+
+                    except Exception as e:
+                        print(f"Error in adding channel: {e}")
+                        import traceback
+                        print(traceback.format_exc())
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                "채널 설정 중 오류가 발생했습니다. 다시 시도해주세요.",
+                                ephemeral=True
+                            )
+                        else:
+                            await interaction.followup.send(
+                                "채널 설정 중 오류가 발생했습니다. 다시 시도해주세요.",
+                                ephemeral=True
+                            )
+                else:
+                    await interaction.response.send_message(
+                        "선택한 캐릭터를 찾을 수 없습니다.",
+                        ephemeral=True
+                    )
+
+            except Exception as e:
+                print(f"Error in channel creation: {e}")
+                import traceback
+                print(traceback.format_exc())
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "An error occurred, please try again.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "An error occurred, please try again.",
+                        ephemeral=True
+                    )
 
         except Exception as e:
             print(f"CharacterSelect error: {e}")
@@ -417,65 +446,6 @@ class BotSelector(commands.Bot):
         }
 
         self.setup_commands()
-
-        # 채널 자동 정리 설정
-        self.channel_cleanup_threshold = 140  # 150개 제한 중 140개에서 정리 시작
-        self.channel_cleanup_age = 24  # 24시간 이상 비활성 채널 정리
-        
-    async def cleanup_inactive_channels(self):
-        """비활성 채널을 자동으로 정리하는 메서드"""
-        try:
-            for guild in self.guilds:
-                category = discord.utils.get(guild.categories, name="chatbot")
-                if not category:
-                    continue
-                    
-                # 채널 수 확인
-                channels = [c for c in category.channels if isinstance(c, discord.TextChannel)]
-                if len(channels) < self.channel_cleanup_threshold:
-                    continue
-                    
-                # 비활성 채널 찾기
-                now = datetime.utcnow()
-                inactive_channels = []
-                
-                for channel in channels:
-                    # 마지막 메시지 확인
-                    try:
-                        last_message = await channel.history(limit=1).flatten()
-                        if not last_message:
-                            inactive_channels.append(channel)
-                            continue
-                            
-                        last_message_time = last_message[0].created_at
-                        if (now - last_message_time).total_seconds() > (self.channel_cleanup_age * 3600):
-                            inactive_channels.append(channel)
-                    except Exception as e:
-                        print(f"Error checking channel {channel.name}: {e}")
-                        continue
-                
-                # 비활성 채널 삭제
-                for channel in inactive_channels:
-                    try:
-                        await channel.delete()
-                        print(f"Deleted inactive channel: {channel.name}")
-                    except Exception as e:
-                        print(f"Error deleting channel {channel.name}: {e}")
-                        
-        except Exception as e:
-            print(f"Error in cleanup_inactive_channels: {e}")
-            
-    async def on_ready(self):
-        print('Chatbot Selector is ready.')
-        await self.change_presence(
-            status=discord.Status.online,
-            activity=discord.Game(name="Bot Selector")
-        )
-        
-        # 주기적으로 채널 정리 실행
-        while True:
-            await self.cleanup_inactive_channels()
-            await asyncio.sleep(3600)  # 1시간마다 실행
 
     async def get_ai_response(self, messages: list, emotion_score: int = 0) -> str:
         import openai
@@ -729,7 +699,7 @@ class BotSelector(commands.Bot):
         async def reset_affinity(interaction: discord.Interaction, target: discord.Member = None):
             # 관리자 권한 확인
             if not self.settings.is_admin(interaction.user):
-                await interaction.response.send_message("This command can only be used by admins.", ephemeral=True)
+                await interaction.response.send_message("This command can only be used in character chat channels.", ephemeral=True)
                 return
 
             try:
@@ -1633,7 +1603,7 @@ class BotSelector(commands.Bot):
         )
         async def affinity_set_command(interaction: discord.Interaction, target: discord.Member, value: int, character: str):
             if not self.settings.is_admin(interaction.user):
-                await interaction.response.send_message("This command can only be used by admins.", ephemeral=True)
+                await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
                 return
             # affinity 직접 수정
             try:
@@ -1757,25 +1727,6 @@ class BotSelector(commands.Bot):
             )
             await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
 
-        @self.tree.command(
-            name="feedback",
-            description="Leave your feedback"
-        )
-        async def feedback_command(interaction: discord.Interaction):
-            embed = discord.Embed(
-                title="Thank you for playing Zerolink!",
-                description="The program is currently in the testing phase, so there may be some bugs and incomplete features. Please leave your feedback through the link below (in English)",
-                color=discord.Color.blue()
-            )
-            
-            embed.add_field(
-                name="📧 Feedback Form",
-                value="[Click here to leave feedback](https://docs.google.com/forms/u/1/d/e/1FAIpQLSf4Y2QMiPvFPoYv5kzq_r1iqUmOKTo4RUjPi3xopOEQU6_qXw/viewform)",
-                inline=False
-            )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
     async def setup_hook(self):
         print("봇 초기화 중...")
         try:
@@ -1783,6 +1734,13 @@ class BotSelector(commands.Bot):
             print("Commands synced!")
         except Exception as e:
             print(f"Error syncing commands: {e}")
+
+    async def on_ready(self):
+        print('Chatbot Selector is ready.')
+        await self.change_presence(
+            status=discord.Status.online,
+            activity=discord.Game(name="Bot Selector")
+        )
 
     def detect_language(self, text: str) -> str:
         try:
@@ -2137,13 +2095,12 @@ class CardClaimButton(discord.ui.Button):
             await interaction.response.send_message("An error occurred while claiming the card.", ephemeral=True)
 
 class DiscordShareButton(discord.ui.Button):
-    def __init__(self, card_name, card_desc, image_path, channel_id=None):
+    def __init__(self, card_name, card_desc, image_path, channel_id):
         super().__init__(label="Share to Discord", style=discord.ButtonStyle.primary, emoji="💬")
         self.card_name = card_name
         self.card_desc = card_desc
         self.image_path = image_path
-        # 공유 채널 ID를 새 값으로 고정
-        self.channel_id = 1376830716855189575
+        self.channel_id = 1371549481371435100  # 사용자가 제공한 채널 ID로 수정
 
     async def callback(self, interaction: discord.Interaction):
         channel = interaction.client.get_channel(self.channel_id)
@@ -2164,54 +2121,53 @@ class DiscordShareButton(discord.ui.Button):
 class CardShareView(discord.ui.View):
     def __init__(self, card_name, card_desc, image_path):
         super().__init__()
-        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1376830716855189575))
+        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1371549481371435100))  # 사용자가 제공한 채널 ID로 수정
 
 class RankingSelect(discord.ui.Select):
     def __init__(self, db):
         self.db = db
         options = [
             discord.SelectOption(
-                label="Total Ranking",
-                description="View total chat ranking across all characters",
+                label="Kagari Chat Ranking",
+                description="Top 10 users by affinity and chat count with Kagari",
+                value="Kagari",
+                emoji="🌸"
+            ),
+            discord.SelectOption(
+                label="Eros Chat Ranking",
+                description="Top 10 users by affinity and chat count with Eros",
+                value="Eros",
+                emoji="💝"
+            ),
+            discord.SelectOption(
+                label="Total Chat Ranking",
+                description="Top 10 users by total affinity and chat count across all characters",
                 value="total",
                 emoji="👑"
             )
         ]
-        for char_name, char_info in CHARACTER_INFO.items():
-            options.append(
-                discord.SelectOption(
-                    label=f"{char_name} Ranking",
-                    description=f"View {char_name} chat ranking",
-                    value=char_name,
-                    emoji=char_info['emoji']
-                )
-            )
         super().__init__(
-            placeholder="Select ranking type",
+            placeholder="Select the ranking you want to check",
             min_values=1,
             max_values=1,
             options=options
         )
 
     async def callback(self, interaction: discord.Interaction):
-        print("[DEBUG] RankingSelect callback called")
         try:
-            await interaction.response.defer()
             character_name = self.values[0]
             user_id = interaction.user.id
 
             if character_name == "total":
+                # 전체 랭킹 조회
                 rankings = self.db.get_total_ranking()
                 user_rank = self.db.get_user_total_rank(user_id)
-                stats = self.db.get_user_stats(user_id)
-                affinity = stats.get('total_affinity', 0) if stats else 0
                 title = "👑 Total Chat Ranking TOP 10"
                 color = discord.Color.gold()
             else:
+                # 캐릭터별 랭킹 조회
                 rankings = self.db.get_character_ranking(character_name)
                 user_rank = self.db.get_user_character_rank(user_id, character_name)
-                stats = self.db.get_user_stats(user_id, character_name)
-                affinity = stats.get('affinity', 0) if stats else 0
                 char_info = CHARACTER_INFO[character_name]
                 title = f"{char_info['emoji']} {character_name} Chat Ranking TOP 10"
                 color = char_info['color']
@@ -2221,65 +2177,60 @@ class RankingSelect(discord.ui.Select):
                 color=color
             )
 
-            if not rankings:
-                await interaction.followup.send("No ranking data available.", ephemeral=True)
-                return
-
-            for i, row in enumerate(rankings[:10], 1):
-                try:
-                    if len(row) == 3:
-                        rank_user_id, affinity_val, messages = row
-                    elif len(row) == 2:
-                        rank_user_id, affinity_val = row
-                        messages = 0
-                    else:
-                        continue
-                    user = await interaction.client.fetch_user(int(rank_user_id))
-                    display_name = user.display_name if user else f"User{rank_user_id}"
-                    grade = get_affinity_grade(affinity_val)
+            # TOP 10 표시
+            for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
+                user = await interaction.client.fetch_user(rank_user_id)
+                display_name = user.display_name if user else f"User{rank_user_id}"
+                grade = get_affinity_grade(affinity)
+                # Chat: ... 부분 삭제, 디자인 개선
+                if rank_user_id == user_id:
                     value = (
-                        f"🌟 Affinity: `{affinity_val}` points\n"
+                        f"**🌟 Affinity:** `{affinity}` points\n"
+                        f"**🏅 Grade:** `{grade}`"
+                    )
+                else:
+                    value = (
+                        f"🌟 Affinity: `{affinity}` points\n"
                         f"🏅 Grade: `{grade}`"
                     )
-                    if messages > 0:
-                        value += f"\n💬 Messages: `{messages}`"
-                    embed.add_field(
-                        name=f"**{i}st: {display_name}**",
-                        value=value,
-                        inline=False
-                    )
-                except Exception as e:
-                    print(f"Error in ranking row: {e}")
-                    continue
+                embed.add_field(
+                    name=f"**{i}st: {display_name}**",
+                    value=value,
+                    inline=False
+                )
 
-            # 사용자의 랭킹 정보 추가
-            if user_rank and isinstance(user_rank, int) and user_rank < 999999:
-                try:
-                    user = await interaction.client.fetch_user(user_id)
-                    display_name = user.display_name if user else f"User{user_id}"
-                    grade = get_affinity_grade(affinity)
-                    embed.add_field(
-                        name="Your Ranking",
-                        value=f"**Rank {user_rank}: {display_name}**\n🌟 Affinity: `{affinity}` points\n🏅 Grade: `{grade}`",
-                        inline=False
-                    )
-                except Exception as e:
-                    print(f"Error adding user rank: {e}")
-            else:
-                print(f"[DEBUG] user_rank 값이 올바르지 않음: {user_rank}")
+            # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
+            if user_rank > 10:
+                user = await interaction.client.fetch_user(user_id)
+                display_name = user.display_name if user else f"User{user_id}"
+                user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
 
-            view = discord.ui.View()
+                embed.add_field(
+                    name="\u200b",
+                    value="─────────────────",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name=f"{user_rank}st: {display_name} (Your Rank)",
+                    value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
+                    inline=False
+                )
+
+            # 뒤로가기 버튼이 포함된 새로운 뷰 생성
+            view = RankingView(self.db)
             view.add_item(BackButton())
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+            await interaction.response.edit_message(embed=embed, view=view)
 
         except Exception as e:
             print(f"Error in ranking select: {e}")
             import traceback
             print(traceback.format_exc())
-            try:
-                await interaction.followup.send("An error occurred while loading ranking information.", ephemeral=True)
-            except:
-                pass
+            if not interaction.response.is_done():
+                await interaction.response.send_message("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+            else:
+                await interaction.followup.send("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
 
 class BackButton(discord.ui.Button):
     def __init__(self):
@@ -2457,8 +2408,6 @@ class ChoiceButton(discord.ui.Button):
                 await interaction.response.send_message("Only you can select.", ephemeral=True)
                 return
 
-            print(f"[DEBUG][ChoiceButton] Starting callback for user_id={self.user.id}, character={self.character_name}, chapter_id={self.chapter_id}, choice={self.value}")
-
             # 1. 선택 버튼 비활성화
             for item in self.view.children:
                 if isinstance(item, discord.ui.Button):
@@ -2480,13 +2429,11 @@ class ChoiceButton(discord.ui.Button):
 
             # 3. 카드 지급 (점수 기반)
             total_score = story_sessions[self.user.id]["score"]
-            print(f"[DEBUG][ChoiceButton] Current total_score={total_score}")
-
             card_id = get_story_card_reward(self.character_name, total_score)
-            print(f"[DEBUG][ChoiceButton] Retrieved card_id={card_id} for score {total_score}")
 
             if card_id:
-                print(f"[DEBUG][ChoiceButton] Processing card reward: user_id={self.user.id}, character={self.character_name}, card_id={card_id}")
+                print(f"[DEBUG][ChoiceButton] user_id={self.user.id}, character={self.character_name}, chapter_id={self.chapter_id}, choice={self.value}, card_id={card_id}")
+                print(f"[DEBUG][ChoiceButton] total_score={total_score}")
 
                 card_info = CHARACTER_CARD_INFO[self.character_name][card_id]
                 card_embed = discord.Embed(
@@ -2506,7 +2453,7 @@ class ChoiceButton(discord.ui.Button):
                         file = discord.File(image_path, filename=f"card_{card_id}.png")
                         card_embed.set_image(url=f"attachment://card_{card_id}.png")
                     else:
-                        print(f"[DEBUG][ChoiceButton] Card image not found: {image_path}")
+                        print(f"[DEBUG] Card image not found: {image_path}")
 
                 # CardClaimView 생성 및 메시지 전송
                 view = CardClaimView(self.user.id, card_id, self.character_name, self.db, is_story_mode=True)
@@ -2519,7 +2466,7 @@ class ChoiceButton(discord.ui.Button):
                 await self.channel.send("Story mode has ended, please enter /close to close the channel.")
 
         except Exception as e:
-            print(f"[ERROR][ChoiceButton] Error in callback: {e}")
+            print(f"[ERROR] ChoiceButton callback: {e}")
             import traceback
             print(traceback.format_exc())
             await interaction.response.send_message("An error occurred. Please contact the administrator.", ephemeral=True)

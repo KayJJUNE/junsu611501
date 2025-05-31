@@ -2155,6 +2155,9 @@ class RankingSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         try:
+            # 먼저 응답을 지연시킴
+            await interaction.response.defer()
+            
             character_name = self.values[0]
             user_id = interaction.user.id
 
@@ -2182,7 +2185,7 @@ class RankingSelect(discord.ui.Select):
                 user = await interaction.client.fetch_user(rank_user_id)
                 display_name = user.display_name if user else f"User{rank_user_id}"
                 grade = get_affinity_grade(affinity)
-                # Chat: ... 부분 삭제, 디자인 개선
+                
                 if rank_user_id == user_id:
                     value = (
                         f"**🌟 Affinity:** `{affinity}` points\n"
@@ -2193,6 +2196,7 @@ class RankingSelect(discord.ui.Select):
                         f"🌟 Affinity: `{affinity}` points\n"
                         f"🏅 Grade: `{grade}`"
                     )
+                
                 embed.add_field(
                     name=f"**{i}st: {display_name}**",
                     value=value,
@@ -2221,16 +2225,17 @@ class RankingSelect(discord.ui.Select):
             view = RankingView(self.db)
             view.add_item(BackButton())
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            # followup을 사용하여 메시지 전송
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             print(f"Error in ranking select: {e}")
             import traceback
             print(traceback.format_exc())
-            if not interaction.response.is_done():
-                await interaction.response.send_message("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
-            else:
+            try:
                 await interaction.followup.send("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 class BackButton(discord.ui.Button):
     def __init__(self):

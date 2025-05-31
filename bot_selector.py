@@ -2205,10 +2205,10 @@ class RankingSelect(discord.ui.Select):
                     user = None
                 display_name = user.display_name if user else f"User{rank_user_id}"
                 grade = get_affinity_grade(affinity)
-                    value = (
-                        f"🌟 Affinity: `{affinity}` points\n"
-                        f"🏅 Grade: `{grade}`"
-                    )
+                value = (
+                    f"🌟 Affinity: `{affinity}` points\n"
+                    f"🏅 Grade: `{grade}`"
+                )
                 embed.add_field(
                     name=f"**{i}st: {display_name}**",
                     value=value,

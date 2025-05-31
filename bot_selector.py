@@ -2124,27 +2124,30 @@ class CardShareView(discord.ui.View):
         self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1371549481371435100))  # 사용자가 제공한 채널 ID로 수정
 
 class RankingSelect(discord.ui.Select):
-    def __init__(self, rankings: list, ranking_type: str):
-        self.ranking_type = ranking_type
-        options = []
-        
-        for i, (user_id, score, messages) in enumerate(rankings, 1):
-            user = bot.get_user(user_id)
-            if user:
-                if ranking_type == "total":
-                    label = f"{i}위: {user.name}"
-                    description = f"친밀도: {score} | 대화: {messages}회"
-                else:
-                    label = f"{i}위: {user.name}"
-                    description = f"친밀도: {score}"
-                options.append(discord.SelectOption(
-                    label=label,
-                    description=description,
-                    value=str(user_id)
-                ))
-        
+    def __init__(self, db):
+        self.db = db
+        options = [
+            discord.SelectOption(
+                label="Kagari Chat Ranking",
+                description="Top 10 users by affinity and chat count with Kagari",
+                value="Kagari",
+                emoji="🌸"
+            ),
+            discord.SelectOption(
+                label="Eros Chat Ranking",
+                description="Top 10 users by affinity and chat count with Eros",
+                value="Eros",
+                emoji="💝"
+            ),
+            discord.SelectOption(
+                label="Total Chat Ranking",
+                description="Top 10 users by total affinity and chat count across all characters",
+                value="total",
+                emoji="👑"
+            )
+        ]
         super().__init__(
-            placeholder="랭킹을 선택하세요",
+            placeholder="Select the ranking you want to check",
             min_values=1,
             max_values=1,
             options=options
@@ -2164,24 +2167,6 @@ class RankingSelect(discord.ui.Select):
                 user_rank = self.db.get_user_total_rank(user_id)
                 title = "👑 Total Chat Ranking TOP 10"
                 color = discord.Color.gold()
-                embed = discord.Embed(title=title, color=color)
-
-                # TOP 10 표시 (컬럼명 통일: emotion_score, message_count)
-                for i, (rank_user_id, emotion_score, message_count) in enumerate(rankings[:10], 1):
-                    user = await interaction.client.fetch_user(rank_user_id)
-                    display_name = user.display_name if user else f"User{rank_user_id}"
-                    grade = get_affinity_grade(emotion_score)
-                    value = (
-                        f"🌟 Affinity: `{emotion_score}` points | "
-                        f"💬 Chat: `{message_count}` times\n"
-                        f"🏅 Grade: `{grade}`"
-                    )
-                    embed.add_field(
-                        name=f"{i}st: {display_name}",
-                        value=value,
-                        inline=False
-                    )
-                # 이하 내 순위 등 기존 코드 유지
             else:
                 # 캐릭터별 랭킹 조회
                 rankings = self.db.get_character_ranking(character_name)

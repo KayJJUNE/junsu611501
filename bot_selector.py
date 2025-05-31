@@ -2180,28 +2180,36 @@ class RankingSelect(discord.ui.Select):
                 color=color
             )
 
-            # TOP 10 표시
-            for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
-                user = await interaction.client.fetch_user(rank_user_id)
-                display_name = user.display_name if user else f"User{rank_user_id}"
-                grade = get_affinity_grade(affinity)
-
-                if rank_user_id == user_id:
-                    value = (
-                        f"**🌟 Affinity:** `{affinity}` points\n"
-                        f"**🏅 Grade:** `{grade}`"
-                    )
-                else:
-                    value = (
-                        f"🌟 Affinity: `{affinity}` points\n"
-                        f"🏅 Grade: `{grade}`"
-                    )
-
+            if not rankings:
                 embed.add_field(
-                    name=f"**{i}st: {display_name}**",
-                    value=value,
+                    name="No ranking data",
+                    value="No ranking data yet. Start the conversation!",
                     inline=False
                 )
+            else:
+                for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
+                    affinity = affinity or 0
+                    messages = messages or 0
+                    user = await interaction.client.fetch_user(rank_user_id)
+                    display_name = user.display_name if user else f"User{rank_user_id}"
+                    grade = get_affinity_grade(affinity)
+
+                    if rank_user_id == user_id:
+                        value = (
+                            f"**🌟 Affinity:** `{affinity}` points\n"
+                            f"**🏅 Grade:** `{grade}`"
+                        )
+                    else:
+                        value = (
+                            f"🌟 Affinity: `{affinity}` points\n"
+                            f"🏅 Grade: `{grade}`"
+                        )
+
+                    embed.add_field(
+                        name=f"**{i}st: {display_name}**",
+                        value=value,
+                        inline=False
+                    )
 
             # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
             if user_rank > 10:
@@ -2233,7 +2241,7 @@ class RankingSelect(discord.ui.Select):
             import traceback
             print(traceback.format_exc())
             try:
-                await interaction.followup.send("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("An error occurred while fetching ranking information.", ephemeral=True)
             except:
                 pass
 

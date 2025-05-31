@@ -2167,6 +2167,67 @@ class RankingSelect(discord.ui.Select):
                 user_rank = self.db.get_user_total_rank(user_id)
                 title = "👑 Total Chat Ranking TOP 10"
                 color = discord.Color.gold()
+
+                embed = discord.Embed(
+                    title=title,
+                    color=color
+                )
+
+                # TOP 10 유저 리스트
+                for i, (rank_user_id, total_emotion, total_messages) in enumerate(rankings[:10], 1):
+                    try:
+                        user = await interaction.client.fetch_user(rank_user_id)
+                        display_name = user.display_name if user else f"User{rank_user_id}"
+                    except Exception:
+                        display_name = f"User{rank_user_id}"
+                    grade = get_affinity_grade(total_emotion)
+
+                    if rank_user_id == user_id:
+                        value = (
+                            f"**🌟 Affinity:** `{total_emotion}`score\n"
+                            f"**💬 Message:** `{total_messages}`\n"
+                            f"**🏅 Grade:** `{grade}`"
+                        )
+                    else:
+                        value = (
+                            f"🌟 Affinity: `{total_emotion}`score\n"
+                            f"💬 Message: `{total_messages}`times\n"
+                            f"🏅 Grade: `{grade}`"
+                        )
+
+                    embed.add_field(
+                        name=f"**{i}st: {display_name}**",
+                        value=value,
+                        inline=False
+                    )
+
+                # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
+                if user_rank > 10:
+                    try:
+                        user = await interaction.client.fetch_user(user_id)
+                        display_name = user.display_name if user else f"User{user_id}"
+                    except Exception:
+                        display_name = f"User{user_id}"
+                    # 본인 통계 가져오기
+                    user_stats = self.db.get_user_stats(user_id, None)
+                    embed.add_field(
+                        name="\u200b",
+                        value="─────────────────",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name=f"{user_rank}st: {display_name} (Your Rank)",
+                        value=f"**Affinity: {user_stats['affinity']} score | Message: {user_stats['messages']} times**",
+                        inline=False
+                    )
+
+                # 뒤로가기 버튼이 포함된 새로운 뷰 생성
+                view = RankingView(self.db)
+                view.add_item(BackButton())
+
+                # followup을 사용하여 메시지 전송
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                return
             else:
                 # 캐릭터별 랭킹 조회
                 rankings = self.db.get_character_ranking(character_name)
@@ -2175,65 +2236,65 @@ class RankingSelect(discord.ui.Select):
                 title = f"{char_info['emoji']} {character_name} Chat Ranking TOP 10"
                 color = char_info['color']
 
-            embed = discord.Embed(
-                title=title,
-                color=color
-            )
+                embed = discord.Embed(
+                    title=title,
+                    color=color
+                )
 
-            # TOP 10 표시
-            for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
-                user = await interaction.client.fetch_user(rank_user_id)
-                display_name = user.display_name if user else f"User{rank_user_id}"
-                grade = get_affinity_grade(affinity)
+                # TOP 10 표시
+                for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
+                    user = await interaction.client.fetch_user(rank_user_id)
+                    display_name = user.display_name if user else f"User{rank_user_id}"
+                    grade = get_affinity_grade(affinity)
 
-                if rank_user_id == user_id:
-                    value = (
-                        f"**🌟 Affinity:** `{affinity}` points\n"
-                        f"**🏅 Grade:** `{grade}`"
+                    if rank_user_id == user_id:
+                        value = (
+                            f"**🌟 Affinity:** `{affinity}` points\n"
+                            f"**🏅 Grade:** `{grade}`"
+                        )
+                    else:
+                        value = (
+                            f"🌟 Affinity: `{affinity}` points\n"
+                            f"🏅 Grade: `{grade}`"
+                        )
+
+                    embed.add_field(
+                        name=f"**{i}st: {display_name}**",
+                        value=value,
+                        inline=False
                     )
-                else:
-                    value = (
-                        f"🌟 Affinity: `{affinity}` points\n"
-                        f"🏅 Grade: `{grade}`"
+
+                # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
+                if user_rank > 10:
+                    user = await interaction.client.fetch_user(user_id)
+                    display_name = user.display_name if user else f"User{user_id}"
+                    user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
+
+                    embed.add_field(
+                        name="\u200b",
+                        value="─────────────────",
+                        inline=False
                     )
 
-                embed.add_field(
-                    name=f"**{i}st: {display_name}**",
-                    value=value,
-                    inline=False
-                )
+                    embed.add_field(
+                        name=f"{user_rank}st: {display_name} (Your Rank)",
+                        value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
+                        inline=False
+                    )
 
-            # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
-            if user_rank > 10:
-                user = await interaction.client.fetch_user(user_id)
-                display_name = user.display_name if user else f"User{user_id}"
-                user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
+                # 뒤로가기 버튼이 포함된 새로운 뷰 생성
+                view = RankingView(self.db)
+                view.add_item(BackButton())
 
-                embed.add_field(
-                    name="\u200b",
-                    value="─────────────────",
-                    inline=False
-                )
-
-                embed.add_field(
-                    name=f"{user_rank}st: {display_name} (Your Rank)",
-                    value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
-                    inline=False
-                )
-
-            # 뒤로가기 버튼이 포함된 새로운 뷰 생성
-            view = RankingView(self.db)
-            view.add_item(BackButton())
-
-            # followup을 사용하여 메시지 전송
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                # followup을 사용하여 메시지 전송
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             print(f"Error in ranking select: {e}")
             import traceback
             print(traceback.format_exc())
             try:
-                await interaction.followup.send("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("An error occurred while fetching ranking information.", ephemeral=True)
             except:
                 pass
 

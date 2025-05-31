@@ -2100,28 +2100,12 @@ class DiscordShareButton(discord.ui.Button):
         self.card_name = card_name
         self.card_desc = card_desc
         self.image_path = image_path
-        self.channel_id = 1371549481371435100  # 사용자가 제공한 채널 ID로 수정
-
-    async def callback(self, interaction: discord.Interaction):
-        channel = interaction.client.get_channel(self.channel_id)
-        if channel:
-            embed = discord.Embed(title=self.card_name, description=self.card_desc, color=discord.Color.gold())
-            embed.set_footer(text=f"Shared by: {interaction.user.display_name} ({interaction.user.id})", icon_url=interaction.user.display_avatar.url)
-            if self.image_path and os.path.exists(self.image_path):
-                file = discord.File(self.image_path, filename=os.path.basename(self.image_path))
-                embed.set_image(url=f"attachment://{os.path.basename(self.image_path)}")
-                await channel.send(embed=embed, file=file)
-            else:
-                await channel.send(embed=embed)
-            channel_mention = channel.mention if hasattr(channel, 'mention') else f"<# {channel.id}>"
-            await interaction.response.send_message(f"Card has been shared to {channel_mention}!", ephemeral=True)
-        else:
-            await interaction.response.send_message("Failed to find the share channel.", ephemeral=True)
+        self.channel_id = 1376830716855189575  # 변경된 채널 ID
 
 class CardShareView(discord.ui.View):
     def __init__(self, card_name, card_desc, image_path):
         super().__init__()
-        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1371549481371435100))  # 사용자가 제공한 채널 ID로 수정
+        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1376830716855189575))  # 변경된 채널 ID
 
 class RankingSelect(discord.ui.Select):
     def __init__(self, db):

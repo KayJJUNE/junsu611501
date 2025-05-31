@@ -2947,3 +2947,5 @@ def get_story_card_reward(character, score):
         if reward["character"] == character and reward["min"] <= score <= reward["max"]:
             return reward["card"]
     return None
+
+print("=== TOTAL RANKINGS ===", rankings)

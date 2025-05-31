@@ -699,7 +699,7 @@ class BotSelector(commands.Bot):
         async def reset_affinity(interaction: discord.Interaction, target: discord.Member = None):
             # 관리자 권한 확인
             if not self.settings.is_admin(interaction.user):
-                await interaction.response.send_message("This command can only be used by admins.", ephemeral=True)
+                await interaction.response.send_message("This command can only be used in character chat channels.", ephemeral=True)
                 return
 
             try:
@@ -1603,7 +1603,7 @@ class BotSelector(commands.Bot):
         )
         async def affinity_set_command(interaction: discord.Interaction, target: discord.Member, value: int, character: str):
             if not self.settings.is_admin(interaction.user):
-                await interaction.response.send_message("This command can only be used by admins.", ephemeral=True)
+                await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
                 return
             # affinity 직접 수정
             try:
@@ -1726,25 +1726,6 @@ class BotSelector(commands.Bot):
                 color=discord.Color.blurple()
             )
             await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
-
-        @self.tree.command(
-            name="feedback",
-            description="Leave your feedback"
-        )
-        async def feedback_command(interaction: discord.Interaction):
-            embed = discord.Embed(
-                title="Thank you for playing Zerolink!",
-                description="The program is currently in the testing phase, so there may be some bugs and incomplete features. Please leave your feedback through the link below (in English)",
-                color=discord.Color.blue()
-            )
-            
-            embed.add_field(
-                name="📧 Feedback Form",
-                value="[Click here to leave feedback](https://docs.google.com/forms/u/1/d/e/1FAIpQLSf4Y2QMiPvFPoYv5kzq_r1iqUmOKTo4RUjPi3xopOEQU6_qXw/viewform)",
-                inline=False
-            )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def setup_hook(self):
         print("봇 초기화 중...")
@@ -2114,13 +2095,12 @@ class CardClaimButton(discord.ui.Button):
             await interaction.response.send_message("An error occurred while claiming the card.", ephemeral=True)
 
 class DiscordShareButton(discord.ui.Button):
-    def __init__(self, card_name, card_desc, image_path, channel_id=None):
+    def __init__(self, card_name, card_desc, image_path, channel_id):
         super().__init__(label="Share to Discord", style=discord.ButtonStyle.primary, emoji="💬")
         self.card_name = card_name
         self.card_desc = card_desc
         self.image_path = image_path
-        # 공유 채널 ID를 새 값으로 고정
-        self.channel_id = 1376830716855189575
+        self.channel_id = 1371549481371435100  # 사용자가 제공한 채널 ID로 수정
 
     async def callback(self, interaction: discord.Interaction):
         channel = interaction.client.get_channel(self.channel_id)
@@ -2141,56 +2121,56 @@ class DiscordShareButton(discord.ui.Button):
 class CardShareView(discord.ui.View):
     def __init__(self, card_name, card_desc, image_path):
         super().__init__()
-        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1376830716855189575))
+        self.add_item(DiscordShareButton(card_name, card_desc, image_path, 1371549481371435100))  # 사용자가 제공한 채널 ID로 수정
 
 class RankingSelect(discord.ui.Select):
     def __init__(self, db):
         self.db = db
         options = [
             discord.SelectOption(
-                label="Total Ranking",
-                description="View total chat ranking across all characters",
+                label="Kagari Chat Ranking",
+                description="Top 10 users by affinity and chat count with Kagari",
+                value="Kagari",
+                emoji="🌸"
+            ),
+            discord.SelectOption(
+                label="Eros Chat Ranking",
+                description="Top 10 users by affinity and chat count with Eros",
+                value="Eros",
+                emoji="💝"
+            ),
+            discord.SelectOption(
+                label="Total Chat Ranking",
+                description="Top 10 users by total affinity and chat count across all characters",
                 value="total",
                 emoji="👑"
             )
         ]
-        for char_name, char_info in CHARACTER_INFO.items():
-            options.append(
-                discord.SelectOption(
-                    label=f"{char_name} Ranking",
-                    description=f"View {char_name} chat ranking",
-                    value=char_name,
-                    emoji=char_info['emoji']
-                )
-            )
         super().__init__(
-            placeholder="Select ranking type",
+            placeholder="Select the ranking you want to check",
             min_values=1,
             max_values=1,
             options=options
         )
 
     async def callback(self, interaction: discord.Interaction):
-        print("[DEBUG] RankingSelect callback called")
         try:
+            # 먼저 응답을 지연시킴
             await interaction.response.defer()
+
             character_name = self.values[0]
             user_id = interaction.user.id
 
             if character_name == "total":
+                # 전체 랭킹 조회
                 rankings = self.db.get_total_ranking()
                 user_rank = self.db.get_user_total_rank(user_id)
-                stats = self.db.get_user_stats(user_id)
-                affinity = stats['affinity']
-                messages = stats['messages']
                 title = "👑 Total Chat Ranking TOP 10"
                 color = discord.Color.gold()
             else:
+                # 캐릭터별 랭킹 조회
                 rankings = self.db.get_character_ranking(character_name)
                 user_rank = self.db.get_user_character_rank(user_id, character_name)
-                stats = self.db.get_user_stats(user_id, character_name)
-                affinity = stats['affinity']
-                messages = stats['messages']
                 char_info = CHARACTER_INFO[character_name]
                 title = f"{char_info['emoji']} {character_name} Chat Ranking TOP 10"
                 color = char_info['color']
@@ -2200,54 +2180,52 @@ class RankingSelect(discord.ui.Select):
                 color=color
             )
 
-            if not rankings:
-                await interaction.followup.send("No ranking data available.", ephemeral=True)
-                return
+            # TOP 10 표시
+            for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
+                user = await interaction.client.fetch_user(rank_user_id)
+                display_name = user.display_name if user else f"User{rank_user_id}"
+                grade = get_affinity_grade(affinity)
 
-            # TOP 10 유저 리스트 반복문으로 추가
-            for i, row in enumerate(rankings[:10], 1):
-                try:
-                    if len(row) == 3:
-                        rank_user_id, affinity_val, messages_val = row
-                    elif len(row) == 2:
-                        rank_user_id, affinity_val = row
-                        messages_val = 0
-                    else:
-                        continue
-                    user = await interaction.client.fetch_user(int(rank_user_id))
-                    display_name = user.display_name if user else f"User{rank_user_id}"
-                    grade = get_affinity_grade(affinity_val)
+                if rank_user_id == user_id:
                     value = (
-                        f"🌟 Affinity: `{affinity_val}` points | 💬 Chat: `{messages_val}` times\n"
+                        f"**🌟 Affinity:** `{affinity}` points\n"
+                        f"**🏅 Grade:** `{grade}`"
+                    )
+                else:
+                    value = (
+                        f"🌟 Affinity: `{affinity}` points\n"
                         f"🏅 Grade: `{grade}`"
                     )
-                    embed.add_field(
-                        name=f"{i}위: {display_name}",
-                        value=value,
-                        inline=False
-                    )
-                except Exception as e:
-                    print(f"Error in ranking row: {e}")
-                    continue
 
-            # 내 순위가 TOP 10에 없으면 별도로 추가
-            if user_rank and isinstance(user_rank, int) and user_rank > 10 and user_rank < 999999:
-                try:
-                    user = await interaction.client.fetch_user(user_id)
-                    display_name = user.display_name if user else f"User{user_id}"
-                    grade = get_affinity_grade(affinity)
-                    embed.add_field(
-                        name=f"{user_rank}위: {display_name} (Your Rank)",
-                        value=f"🌟 Affinity: `{affinity}` points | 💬 Chat: `{messages}` times\n🏅 Grade: `{grade}`",
-                        inline=False
-                    )
-                except Exception as e:
-                    print(f"Error adding user rank: {e}")
-            else:
-                print(f"[DEBUG] user_rank 값이 올바르지 않음: {user_rank}")
+                embed.add_field(
+                    name=f"**{i}st: {display_name}**",
+                    value=value,
+                    inline=False
+                )
 
-            view = discord.ui.View()
+            # 사용자가 TOP 10에 없는 경우 자신의 순위 추가
+            if user_rank > 10:
+                user = await interaction.client.fetch_user(user_id)
+                display_name = user.display_name if user else f"User{user_id}"
+                user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
+
+                embed.add_field(
+                    name="\u200b",
+                    value="─────────────────",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name=f"{user_rank}st: {display_name} (Your Rank)",
+                    value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
+                    inline=False
+                )
+
+            # 뒤로가기 버튼이 포함된 새로운 뷰 생성
+            view = RankingView(self.db)
             view.add_item(BackButton())
+
+            # followup을 사용하여 메시지 전송
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
@@ -2255,7 +2233,7 @@ class RankingSelect(discord.ui.Select):
             import traceback
             print(traceback.format_exc())
             try:
-                await interaction.followup.send("An error occurred while loading ranking information.", ephemeral=True)
+                await interaction.followup.send("랭킹 정보를 불러오는 중 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -2435,8 +2413,6 @@ class ChoiceButton(discord.ui.Button):
                 await interaction.response.send_message("Only you can select.", ephemeral=True)
                 return
 
-            print(f"[DEBUG][ChoiceButton] Starting callback for user_id={self.user.id}, character={self.character_name}, chapter_id={self.chapter_id}, choice={self.value}")
-
             # 1. 선택 버튼 비활성화
             for item in self.view.children:
                 if isinstance(item, discord.ui.Button):
@@ -2458,13 +2434,11 @@ class ChoiceButton(discord.ui.Button):
 
             # 3. 카드 지급 (점수 기반)
             total_score = story_sessions[self.user.id]["score"]
-            print(f"[DEBUG][ChoiceButton] Current total_score={total_score}")
-
             card_id = get_story_card_reward(self.character_name, total_score)
-            print(f"[DEBUG][ChoiceButton] Retrieved card_id={card_id} for score {total_score}")
 
             if card_id:
-                print(f"[DEBUG][ChoiceButton] Processing card reward: user_id={self.user.id}, character={self.character_name}, card_id={card_id}")
+                print(f"[DEBUG][ChoiceButton] user_id={self.user.id}, character={self.character_name}, chapter_id={self.chapter_id}, choice={self.value}, card_id={card_id}")
+                print(f"[DEBUG][ChoiceButton] total_score={total_score}")
 
                 card_info = CHARACTER_CARD_INFO[self.character_name][card_id]
                 card_embed = discord.Embed(
@@ -2484,7 +2458,7 @@ class ChoiceButton(discord.ui.Button):
                         file = discord.File(image_path, filename=f"card_{card_id}.png")
                         card_embed.set_image(url=f"attachment://card_{card_id}.png")
                     else:
-                        print(f"[DEBUG][ChoiceButton] Card image not found: {image_path}")
+                        print(f"[DEBUG] Card image not found: {image_path}")
 
                 # CardClaimView 생성 및 메시지 전송
                 view = CardClaimView(self.user.id, card_id, self.character_name, self.db, is_story_mode=True)
@@ -2497,7 +2471,7 @@ class ChoiceButton(discord.ui.Button):
                 await self.channel.send("Story mode has ended, please enter /close to close the channel.")
 
         except Exception as e:
-            print(f"[ERROR][ChoiceButton] Error in callback: {e}")
+            print(f"[ERROR] ChoiceButton callback: {e}")
             import traceback
             print(traceback.format_exc())
             await interaction.response.send_message("An error occurred. Please contact the administrator.", ephemeral=True)

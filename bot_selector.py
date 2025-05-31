@@ -650,6 +650,7 @@ class BotSelector(commands.Bot):
             name="settings",
             description="현재 설정 확인"
         )
+        @is_admin()
         async def settings_command(interaction: discord.Interaction):
             if not isinstance(interaction.channel, discord.TextChannel):
                 await interaction.response.send_message("This command can only be used in server channels.", ephemeral=True)
@@ -696,6 +697,7 @@ class BotSelector(commands.Bot):
             name="reset_affinity",
             description="Reset affinity"
         )
+        @is_admin()
         async def reset_affinity(interaction: discord.Interaction, target: discord.Member = None):
             # 관리자 권한 확인
             if not self.settings.is_admin(interaction.user):
@@ -706,7 +708,7 @@ class BotSelector(commands.Bot):
                 # 현재 채널의 캐릭터 봇 찾기
                 current_bot = None
                 for char_name, bot in self.character_bots.items():
-                    if interaction.channel.id in bot.active_channels:
+                    if interaction.channel.id in bot.active_channels.values():
                         current_bot = bot
                         break
 
@@ -800,7 +802,7 @@ class BotSelector(commands.Bot):
                 # Find the character bot for the current channel
                 current_bot = None
                 for char_name, bot in self.character_bots.items():
-                    if interaction.channel.id in bot.active_channels:
+                    if interaction.channel.id in bot.active_channels.values():
                         current_bot = bot
                         break
 
@@ -940,6 +942,7 @@ class BotSelector(commands.Bot):
             name="remove_admin_role",
             description="Remove the administrator role"
         )
+        @is_admin()
         async def remove_admin_role(interaction: discord.Interaction, role: discord.Role):
             if not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message("This command can only be used in server channels.", ephemeral=True)
@@ -955,6 +958,7 @@ class BotSelector(commands.Bot):
             name="set_daily_limit",
             description="Setting a daily message limit (admin only)"
         )
+        @is_admin()
         async def set_daily_limit(interaction: discord.Interaction, limit: int):
             if not self.settings.is_admin(interaction.user):
                 await interaction.response.send_message("This command can only be used in server channels.", ephemeral=True)
@@ -990,7 +994,7 @@ class BotSelector(commands.Bot):
             try:
                 current_bot = None
                 for char_name, bot in self.character_bots.items():
-                    if interaction.channel.id in bot.active_channels:
+                    if interaction.channel.id in bot.active_channels.values():
                         current_bot = bot
                         break
 
@@ -1028,7 +1032,7 @@ class BotSelector(commands.Bot):
                 # 현재 채널의 캐릭터 봇 찾기
                 current_bot = None
                 for char_name, bot in self.character_bots.items():
-                    if interaction.channel.id in bot.active_channels:
+                    if interaction.channel.id in bot.active_channels.values():
                         current_bot = bot
                         break
 
@@ -1239,12 +1243,13 @@ class BotSelector(commands.Bot):
             name="check_language",
             description="현재 채널의 언어를 확인합니다."
         )
+        @is_admin()
         async def check_language_command(interaction: discord.Interaction):
             try:
                 # 현재 채널의 캐릭터 봇 찾기
                 current_bot = None
                 for char_name, bot in self.character_bots.items():
-                    if interaction.channel.id in bot.active_channels:
+                    if interaction.channel.id in bot.active_channels.values():
                         current_bot = bot
                         break
 
@@ -1299,7 +1304,7 @@ class BotSelector(commands.Bot):
             # 현재 채널의 캐릭터 봇 찾기
             current_bot = None
             for char_name, bot in self.character_bots.items():
-                if interaction.channel.id in bot.active_channels:
+                if interaction.channel.id in bot.active_channels.values():
                     current_bot = bot
                     break
 
@@ -1576,10 +1581,8 @@ class BotSelector(commands.Bot):
             name="message_add",
             description="Admin: Manually add a user's message count."
         )
+        @is_admin()
         async def message_add_command(interaction: discord.Interaction, target: discord.Member, count: int, character: str):
-            if not self.settings.is_admin(interaction.user):
-                await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
-                return
             # DB에 메시지 추가 (실제 메시지 insert)
             for _ in range(count):
                 await self.db.add_message(
@@ -1623,10 +1626,8 @@ class BotSelector(commands.Bot):
             name="card_give",
             description="Admin: Manually give a card to a user."
         )
+        @is_admin()
         async def card_give_command(interaction: discord.Interaction, target: discord.Member, character: str, card_id: str):
-            if not self.settings.is_admin(interaction.user):
-                await interaction.response.send_message("Only admins can use this command.", ephemeral=True)
-                return
             success = self.db.add_user_card(target.id, character, card_id)
             if success:
                 embed = discord.Embed(
@@ -1646,10 +1647,8 @@ class BotSelector(commands.Bot):
             name="message_add_total",
             description="Admin: Manually set a user's total message count."
         )
+        @is_admin()
         async def message_add_total_command(interaction: discord.Interaction, target: discord.Member, total: int):
-            if not self.settings.is_admin(interaction.user):
-                await interaction.response.send_message("Only admins can use this command.", ephemeral=True)
-                return
             if total < 0:
                 await interaction.response.send_message("The message count must be 0 or more.", ephemeral=True)
                 return
@@ -1745,6 +1744,16 @@ class BotSelector(commands.Bot):
             )
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        @self.tree.command(
+            name="affinity_admin_role",
+            description="Add an admin role for affinity management"
+        )
+        @is_admin()
+        async def affinity_admin_role_command(interaction: discord.Interaction, role: discord.Role):
+            # 기존 코드 유지
+            self.settings.add_admin_role(role.id)
+            await interaction.response.send_message(f"{role.name} role has been added to the admin role.", ephemeral=True)
 
     async def setup_hook(self):
         print("봇 초기화 중...")
@@ -2222,19 +2231,19 @@ class RankingSelect(discord.ui.Select):
             for i, (rank_user_id, affinity, messages) in enumerate(rankings[:10], 1):
                 try:
                     user = user_cache.get(int(rank_user_id))
-                    display_name = user.display_name if user else f"User{rank_user_id}"
-                    grade = get_affinity_grade(affinity)
+                display_name = user.display_name if user else f"User{rank_user_id}"
+                grade = get_affinity_grade(affinity)
                     
                     value = (
                         f"🌟 Affinity: `{affinity}` points\n"
                         f"🏅 Grade: `{grade}`"
                     )
                     
-                    embed.add_field(
-                        name=f"**{i}st: {display_name}**",
-                        value=value,
-                        inline=False
-                    )
+                embed.add_field(
+                    name=f"**{i}st: {display_name}**",
+                    value=value,
+                    inline=False
+                )
                 except Exception as e:
                     print(f"[랭킹] 필드 추가 실패: {rank_user_id}, 에러: {e}")
                     continue
@@ -2242,26 +2251,26 @@ class RankingSelect(discord.ui.Select):
             # 사용자 자신의 랭킹 추가 (TOP 10 밖인 경우)
             if user_rank > 10:
                 try:
-                    user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
+                user_stats = self.db.get_user_stats(user_id, character_name if character_name != "total" else None)
                     if user_stats:
-                        embed.add_field(
-                            name="\u200b",
-                            value="─────────────────",
-                            inline=False
-                        )
-                        
-                        embed.add_field(
+                embed.add_field(
+                    name="\u200b",
+                    value="─────────────────",
+                    inline=False
+                )
+
+                embed.add_field(
                             name=f"{user_rank}st: {interaction.user.display_name} (Your Rank)",
-                            value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
-                            inline=False
-                        )
+                    value=f"**Affinity: {user_stats['affinity']} points | Chat: {user_stats['messages']} times**",
+                    inline=False
+                )
                 except Exception as e:
                     print(f"[랭킹] 사용자 랭킹 추가 실패: {e}")
 
             # 뷰 생성 및 메시지 수정
             view = RankingView(self.db)
             view.add_item(BackButton())
-            
+
             await interaction.followup.edit_message(
                 message_id=interaction.message.id,
                 embed=embed,
@@ -2280,9 +2289,9 @@ class RankingSelect(discord.ui.Select):
             )
             
             try:
-                if not interaction.response.is_done():
+            if not interaction.response.is_done():
                     await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
+            else:
                     await interaction.followup.send(embed=error_embed, ephemeral=True)
             except:
                 pass
@@ -2993,3 +3002,15 @@ def get_story_card_reward(character, score):
         if reward["character"] == character and reward["min"] <= score <= reward["max"]:
             return reward["card"]
     return None
+
+def is_admin():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        # 관리자 권한 또는 custom admin role
+        if interaction.user.guild_permissions.administrator:
+            return True
+        # SettingsManager의 admin_roles 체크
+        bot = interaction.client
+        if hasattr(bot, "settings") and hasattr(bot.settings, "admin_roles"):
+            return any(role.id in bot.settings.admin_roles for role in interaction.user.roles)
+        return False
+    return app_commands.check(predicate)
